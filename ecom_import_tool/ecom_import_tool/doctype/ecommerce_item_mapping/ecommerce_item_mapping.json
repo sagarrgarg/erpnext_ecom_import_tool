@@ -1,0 +1,45 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-04-17 02:52:49.466073",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "erp_item",
+  "ecom_item_id"
+ ],
+ "fields": [
+  {
+   "columns": 5,
+   "fieldname": "erp_item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "ERP Item",
+   "options": "Item",
+   "reqd": 1
+  },
+  {
+   "columns": 5,
+   "fieldname": "ecom_item_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Ecommerce Item",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-04-17 03:07:13.029014",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Ecommerce Item Mapping",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

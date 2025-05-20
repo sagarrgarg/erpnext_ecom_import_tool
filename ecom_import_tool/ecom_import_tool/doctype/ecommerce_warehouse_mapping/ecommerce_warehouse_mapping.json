@@ -1,0 +1,64 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-04-17 02:58:16.898947",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "erp_warehouse",
+  "ecom_warehouse_id",
+  "erp_address",
+  "location"
+ ],
+ "fields": [
+  {
+   "columns": 2,
+   "fieldname": "erp_warehouse",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "ERP Warehouse",
+   "options": "Warehouse",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "ecom_warehouse_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Ecom Warehouse ID",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "erp_address",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "ERP Address",
+   "options": "Address",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "location",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Location",
+   "options": "Location"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-04-17 03:15:07.041046",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Ecommerce Warehouse Mapping",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

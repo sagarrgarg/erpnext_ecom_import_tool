@@ -1,0 +1,45 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-04-17 03:10:03.576561",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "erp_company_gstin",
+  "ecommerce_operator_gstin"
+ ],
+ "fields": [
+  {
+   "columns": 5,
+   "fieldname": "erp_company_gstin",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "ERP Company GSTIN",
+   "options": "GSTIN",
+   "reqd": 1
+  },
+  {
+   "columns": 5,
+   "fieldname": "ecommerce_operator_gstin",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Ecommerce Operator GSTIN",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-04-17 03:12:26.632426",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Ecommerce GSTIN Mapping",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

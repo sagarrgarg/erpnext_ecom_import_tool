@@ -8,6 +8,14 @@ app_license = "mit"
 # Apps
 # ------------------
 
+
+fixtures = [
+    {
+        "doctype": "Custom Field",
+        "filters": [["module" , "in" , ("Ecom Import Tool")]]
+    },
+    {"doctype":"Ecommerce Platform"}
+]
 # required_apps = []
 
 # Each item in the list will be shown as an app in the apps page

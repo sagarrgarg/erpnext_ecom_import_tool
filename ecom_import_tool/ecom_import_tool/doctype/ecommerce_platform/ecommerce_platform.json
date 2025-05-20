@@ -1,0 +1,50 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:ecom_name",
+ "creation": "2025-04-17 02:43:33.758425",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "ecom_name"
+ ],
+ "fields": [
+  {
+   "fieldname": "ecom_name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "unique": 1,
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2025-04-17 02:48:04.716401",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Ecommerce Platform",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 0
+  }
+ ],
+ "read_only": 1,
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

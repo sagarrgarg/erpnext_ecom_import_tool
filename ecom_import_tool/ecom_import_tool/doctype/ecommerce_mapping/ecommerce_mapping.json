@@ -1,0 +1,118 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:mapping_name",
+ "creation": "2025-04-17 02:49:40.058342",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "mapping_name",
+  "platform",
+  "column_break_ngdu",
+  "default_non_company_customer",
+  "auto_create_business_customer",
+  "items_tab",
+  "ecom_sku_column_header",
+  "ecom_item_table",
+  "warehouse_tab",
+  "ecommerce_warehouse_mapping",
+  "additional_settings_tab",
+  "ecommerce_gstin_mapping"
+ ],
+ "fields": [
+  {
+   "fieldname": "column_break_ngdu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "mapping_name",
+   "fieldtype": "Data",
+   "label": "Name",
+   "unique": 1
+  },
+  {
+   "fieldname": "platform",
+   "fieldtype": "Link",
+   "label": "Ecommerce",
+   "options": "Ecommerce Platform"
+  },
+  {
+   "fieldname": "items_tab",
+   "fieldtype": "Tab Break",
+   "label": "Items"
+  },
+  {
+   "fieldname": "ecom_sku_column_header",
+   "fieldtype": "Data",
+   "label": "Ecom SKU Column Header"
+  },
+  {
+   "fieldname": "ecom_item_table",
+   "fieldtype": "Table",
+   "label": "Ecommerce Item Mapping",
+   "options": "Ecommerce Item Mapping"
+  },
+  {
+   "fieldname": "warehouse_tab",
+   "fieldtype": "Tab Break",
+   "label": "Warehouse"
+  },
+  {
+   "fieldname": "ecommerce_warehouse_mapping",
+   "fieldtype": "Table",
+   "label": "Ecommerce Warehouse Mapping",
+   "options": "Ecommerce Warehouse Mapping"
+  },
+  {
+   "fieldname": "additional_settings_tab",
+   "fieldtype": "Tab Break",
+   "label": "Additional Settings"
+  },
+  {
+   "fieldname": "ecommerce_gstin_mapping",
+   "fieldtype": "Table",
+   "label": "Ecommerce GSTIN Mapping",
+   "options": "Ecommerce GSTIN Mapping"
+  },
+  {
+   "fieldname": "default_non_company_customer",
+   "fieldtype": "Link",
+   "label": "Default Non Company Customer",
+   "link_filters": "[[\"Customer\",\"customer_type\",\"=\",\"Individual\"]]",
+   "options": "Customer"
+  },
+  {
+   "default": "0",
+   "fieldname": "auto_create_business_customer",
+   "fieldtype": "Check",
+   "label": "Auto Create Business Customer"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-04-23 22:24:23.573441",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Ecommerce Mapping",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
