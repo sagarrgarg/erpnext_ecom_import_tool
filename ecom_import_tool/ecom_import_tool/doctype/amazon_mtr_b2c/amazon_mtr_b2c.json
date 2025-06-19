@@ -1,0 +1,495 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-02 09:17:54.818954",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "seller_gstin",
+  "invoice_number",
+  "invoice_date",
+  "transaction_type",
+  "order_id",
+  "shipment_id",
+  "shipment_date",
+  "order_date",
+  "shipment_item_id",
+  "quantity",
+  "item_description",
+  "asin",
+  "hsnsac",
+  "sku",
+  "product_tax_code",
+  "bill_from_city",
+  "bill_from_state",
+  "bill_from_country",
+  "bill_from_postal_code",
+  "ship_from_city",
+  "ship_from_state",
+  "ship_from_country",
+  "ship_from_postal_code",
+  "ship_to_city",
+  "ship_to_state",
+  "ship_to_country",
+  "ship_to_postal_code",
+  "invoice_amount",
+  "tax_exclusive_gross",
+  "total_tax_amount",
+  "cgst_rate",
+  "sgst_rate",
+  "utgst_rate",
+  "igst_rate",
+  "compensatory_cess_rate",
+  "principal_amount",
+  "principal_amount_basis",
+  "cgst_tax",
+  "sgst_tax",
+  "igst_tax",
+  "utgst_tax",
+  "compensatory_cess_tax",
+  "shipping_amount",
+  "shipping_amount_basis",
+  "shipping_cgst_tax",
+  "shipping_sgst_tax",
+  "shipping_utgst_tax",
+  "shipping_igst_tax",
+  "shipping_cess_tax_amount",
+  "gift_wrap_amount",
+  "gift_wrap_amount_basis",
+  "gift_wrap_cgst_tax",
+  "gift_wrap_sgst_tax",
+  "gift_wrap_utgst_tax",
+  "gift_wrap_igst_tax",
+  "gift_wrap_compensatory_cess_tax",
+  "item_promo_discount",
+  "item_promo_discount_basis",
+  "item_promo_tax",
+  "shipping_promo_discount",
+  "shipping_promo_discount_basis",
+  "shipping_promo_tax",
+  "gift_wrap_promo_discount",
+  "gift_wrap_promo_discount_basis",
+  "gift_wrap_promo_tax",
+  "tcs_cgst_rate",
+  "tcs_cgst_amount",
+  "tcs_sgst_rate",
+  "tcs_sgst_amount",
+  "tcs_utgst_rate",
+  "tcs_utgst_amount",
+  "tcs_igst_rate",
+  "tcs_igst_amount",
+  "warehouse_id",
+  "fulfillment_channel",
+  "payment_method_code",
+  "credit_note_no",
+  "credit_note_date"
+ ],
+ "fields": [
+  {
+   "fieldname": "seller_gstin",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Seller Gstin"
+  },
+  {
+   "fieldname": "invoice_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Invoice Number"
+  },
+  {
+   "fieldname": "invoice_date",
+   "fieldtype": "Data",
+   "label": "Invoice Date"
+  },
+  {
+   "fieldname": "transaction_type",
+   "fieldtype": "Data",
+   "label": "Transaction Type"
+  },
+  {
+   "fieldname": "order_id",
+   "fieldtype": "Data",
+   "label": "Order Id"
+  },
+  {
+   "fieldname": "shipment_id",
+   "fieldtype": "Data",
+   "label": "Shipment Id"
+  },
+  {
+   "fieldname": "shipment_date",
+   "fieldtype": "Data",
+   "label": "Shipment Date"
+  },
+  {
+   "fieldname": "order_date",
+   "fieldtype": "Data",
+   "label": "Order Date"
+  },
+  {
+   "fieldname": "shipment_item_id",
+   "fieldtype": "Data",
+   "label": "Shipment Item Id"
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Data",
+   "label": "Quantity"
+  },
+  {
+   "fieldname": "item_description",
+   "fieldtype": "Small Text",
+   "label": "Item Description"
+  },
+  {
+   "fieldname": "asin",
+   "fieldtype": "Data",
+   "label": "Asin"
+  },
+  {
+   "fieldname": "hsnsac",
+   "fieldtype": "Data",
+   "label": "Hsn/sac"
+  },
+  {
+   "fieldname": "sku",
+   "fieldtype": "Data",
+   "label": "Sku"
+  },
+  {
+   "fieldname": "product_tax_code",
+   "fieldtype": "Data",
+   "label": "Product Tax Code"
+  },
+  {
+   "fieldname": "bill_from_city",
+   "fieldtype": "Data",
+   "label": "Bill From City"
+  },
+  {
+   "fieldname": "bill_from_state",
+   "fieldtype": "Data",
+   "label": "Bill From State"
+  },
+  {
+   "fieldname": "bill_from_country",
+   "fieldtype": "Data",
+   "label": "Bill From Country"
+  },
+  {
+   "fieldname": "bill_from_postal_code",
+   "fieldtype": "Data",
+   "label": "Bill From Postal Code"
+  },
+  {
+   "fieldname": "ship_from_city",
+   "fieldtype": "Data",
+   "label": "Ship From City"
+  },
+  {
+   "fieldname": "ship_from_state",
+   "fieldtype": "Data",
+   "label": "Ship From State"
+  },
+  {
+   "fieldname": "ship_from_country",
+   "fieldtype": "Data",
+   "label": "Ship From Country"
+  },
+  {
+   "fieldname": "ship_from_postal_code",
+   "fieldtype": "Data",
+   "label": "Ship From Postal Code"
+  },
+  {
+   "fieldname": "ship_to_city",
+   "fieldtype": "Data",
+   "label": "Ship To City"
+  },
+  {
+   "fieldname": "ship_to_state",
+   "fieldtype": "Data",
+   "label": "Ship To State"
+  },
+  {
+   "fieldname": "ship_to_country",
+   "fieldtype": "Data",
+   "label": "Ship To Country"
+  },
+  {
+   "fieldname": "ship_to_postal_code",
+   "fieldtype": "Data",
+   "label": "Ship To Postal Code"
+  },
+  {
+   "fieldname": "invoice_amount",
+   "fieldtype": "Data",
+   "label": "Invoice Amount"
+  },
+  {
+   "fieldname": "tax_exclusive_gross",
+   "fieldtype": "Data",
+   "label": "Tax Exclusive Gross"
+  },
+  {
+   "fieldname": "total_tax_amount",
+   "fieldtype": "Data",
+   "label": "Total Tax Amount"
+  },
+  {
+   "fieldname": "cgst_rate",
+   "fieldtype": "Data",
+   "label": "Cgst Rate"
+  },
+  {
+   "fieldname": "sgst_rate",
+   "fieldtype": "Data",
+   "label": "Sgst Rate"
+  },
+  {
+   "fieldname": "utgst_rate",
+   "fieldtype": "Data",
+   "label": "Utgst Rate"
+  },
+  {
+   "fieldname": "igst_rate",
+   "fieldtype": "Data",
+   "label": "Igst Rate"
+  },
+  {
+   "fieldname": "compensatory_cess_rate",
+   "fieldtype": "Data",
+   "label": "Compensatory Cess Rate"
+  },
+  {
+   "fieldname": "principal_amount",
+   "fieldtype": "Data",
+   "label": "Principal Amount"
+  },
+  {
+   "fieldname": "principal_amount_basis",
+   "fieldtype": "Data",
+   "label": "Principal Amount Basis"
+  },
+  {
+   "fieldname": "cgst_tax",
+   "fieldtype": "Data",
+   "label": "Cgst Tax"
+  },
+  {
+   "fieldname": "sgst_tax",
+   "fieldtype": "Data",
+   "label": "Sgst Tax"
+  },
+  {
+   "fieldname": "igst_tax",
+   "fieldtype": "Data",
+   "label": "Igst Tax"
+  },
+  {
+   "fieldname": "utgst_tax",
+   "fieldtype": "Data",
+   "label": "Utgst Tax"
+  },
+  {
+   "fieldname": "compensatory_cess_tax",
+   "fieldtype": "Data",
+   "label": "Compensatory Cess Tax"
+  },
+  {
+   "fieldname": "shipping_amount",
+   "fieldtype": "Data",
+   "label": "Shipping Amount"
+  },
+  {
+   "fieldname": "shipping_amount_basis",
+   "fieldtype": "Data",
+   "label": "Shipping Amount Basis"
+  },
+  {
+   "fieldname": "shipping_cgst_tax",
+   "fieldtype": "Data",
+   "label": "Shipping Cgst Tax"
+  },
+  {
+   "fieldname": "shipping_sgst_tax",
+   "fieldtype": "Data",
+   "label": "Shipping Sgst Tax"
+  },
+  {
+   "fieldname": "shipping_utgst_tax",
+   "fieldtype": "Data",
+   "label": "Shipping Utgst Tax"
+  },
+  {
+   "fieldname": "shipping_igst_tax",
+   "fieldtype": "Data",
+   "label": "Shipping Igst Tax"
+  },
+  {
+   "fieldname": "shipping_cess_tax_amount",
+   "fieldtype": "Data",
+   "label": "Shipping Cess Tax Amount"
+  },
+  {
+   "fieldname": "gift_wrap_amount",
+   "fieldtype": "Data",
+   "label": "Gift Wrap Amount"
+  },
+  {
+   "fieldname": "gift_wrap_amount_basis",
+   "fieldtype": "Data",
+   "label": "Gift Wrap Amount Basis"
+  },
+  {
+   "fieldname": "gift_wrap_cgst_tax",
+   "fieldtype": "Data",
+   "label": "Gift Wrap Cgst Tax"
+  },
+  {
+   "fieldname": "gift_wrap_sgst_tax",
+   "fieldtype": "Data",
+   "label": "Gift Wrap Sgst Tax"
+  },
+  {
+   "fieldname": "gift_wrap_utgst_tax",
+   "fieldtype": "Data",
+   "label": "Gift Wrap Utgst Tax"
+  },
+  {
+   "fieldname": "gift_wrap_igst_tax",
+   "fieldtype": "Data",
+   "label": "Gift Wrap Igst Tax"
+  },
+  {
+   "fieldname": "gift_wrap_compensatory_cess_tax",
+   "fieldtype": "Data",
+   "label": "Gift Wrap Compensatory Cess Tax"
+  },
+  {
+   "fieldname": "item_promo_discount",
+   "fieldtype": "Data",
+   "label": "Item Promo Discount"
+  },
+  {
+   "fieldname": "item_promo_discount_basis",
+   "fieldtype": "Data",
+   "label": "Item Promo Discount Basis"
+  },
+  {
+   "fieldname": "item_promo_tax",
+   "fieldtype": "Data",
+   "label": "Item Promo Tax"
+  },
+  {
+   "fieldname": "shipping_promo_discount",
+   "fieldtype": "Data",
+   "label": "Shipping Promo Discount"
+  },
+  {
+   "fieldname": "shipping_promo_discount_basis",
+   "fieldtype": "Data",
+   "label": "Shipping Promo Discount Basis"
+  },
+  {
+   "fieldname": "shipping_promo_tax",
+   "fieldtype": "Data",
+   "label": "Shipping Promo Tax"
+  },
+  {
+   "fieldname": "gift_wrap_promo_discount",
+   "fieldtype": "Data",
+   "label": "Gift Wrap Promo Discount"
+  },
+  {
+   "fieldname": "gift_wrap_promo_discount_basis",
+   "fieldtype": "Data",
+   "label": "Gift Wrap Promo Discount Basis"
+  },
+  {
+   "fieldname": "gift_wrap_promo_tax",
+   "fieldtype": "Data",
+   "label": "Gift Wrap Promo Tax"
+  },
+  {
+   "fieldname": "tcs_cgst_rate",
+   "fieldtype": "Data",
+   "label": "Tcs Cgst Rate"
+  },
+  {
+   "fieldname": "tcs_cgst_amount",
+   "fieldtype": "Data",
+   "label": "Tcs Cgst Amount"
+  },
+  {
+   "fieldname": "tcs_sgst_rate",
+   "fieldtype": "Data",
+   "label": "Tcs Sgst Rate"
+  },
+  {
+   "fieldname": "tcs_sgst_amount",
+   "fieldtype": "Data",
+   "label": "Tcs Sgst Amount"
+  },
+  {
+   "fieldname": "tcs_utgst_rate",
+   "fieldtype": "Data",
+   "label": "Tcs Utgst Rate"
+  },
+  {
+   "fieldname": "tcs_utgst_amount",
+   "fieldtype": "Data",
+   "label": "Tcs Utgst Amount"
+  },
+  {
+   "fieldname": "tcs_igst_rate",
+   "fieldtype": "Data",
+   "label": "Tcs Igst Rate"
+  },
+  {
+   "fieldname": "tcs_igst_amount",
+   "fieldtype": "Data",
+   "label": "Tcs Igst Amount"
+  },
+  {
+   "fieldname": "warehouse_id",
+   "fieldtype": "Data",
+   "label": "Warehouse Id"
+  },
+  {
+   "fieldname": "fulfillment_channel",
+   "fieldtype": "Data",
+   "label": "Fulfillment Channel"
+  },
+  {
+   "fieldname": "payment_method_code",
+   "fieldtype": "Data",
+   "label": "Payment Method Code"
+  },
+  {
+   "fieldname": "credit_note_no",
+   "fieldtype": "Data",
+   "label": "Credit Note No"
+  },
+  {
+   "fieldname": "credit_note_date",
+   "fieldtype": "Data",
+   "label": "Credit Note Date"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-06-08 23:40:26.500386",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Amazon MTR B2C",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

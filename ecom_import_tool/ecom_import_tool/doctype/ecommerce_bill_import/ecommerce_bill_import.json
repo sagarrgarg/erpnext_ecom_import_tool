@@ -13,9 +13,22 @@
   "amazon_type",
   "section_import_preview",
   "import_preview",
+  "mtr_b2b_attachment",
+  "mtr_b2b",
+  "stock_transfer_attachment",
+  "stock_transfer",
+  "mtr_b2c_attachment",
+  "mtr_b2c",
+  "cred_attach",
+  "cred",
+  "cred_items",
+  "flipkart_attach",
+  "flipkart_items",
+  "flipkart_cashback",
   "import_log_section",
   "import_log_preview",
-  "payload_count"
+  "payload_count",
+  "error_html"
  ],
  "fields": [
   {
@@ -28,6 +41,7 @@
    "depends_on": "eval:!doc.__islocal",
    "fieldname": "import_file",
    "fieldtype": "Attach",
+   "hidden": 1,
    "label": "Import File",
    "read_only_depends_on": "eval: ['Success', 'Partial Success'].includes(doc.status)"
   },
@@ -36,61 +50,146 @@
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval:doc.ecommerce_mapping==\"Amazon\"",
    "fieldname": "amazon_type",
    "fieldtype": "Select",
    "label": "Amazon Type",
-   "options": "MTR B2B\nMTR B2C\nStock Transfer",
-   "hidden": 1
+   "mandatory_depends_on": "eval:doc.ecommerce_mapping==\"Amazon\"",
+   "options": "\nMTR B2B\nMTR B2C\nStock Transfer"
   },
   {
    "default": "Pending",
    "fieldname": "status",
    "fieldtype": "Select",
    "hidden": 1,
-   "no_copy": 1,
-   "read_only": 1,
    "label": "Status",
-   "options": "Pending\nSuccess\nPartial Success\nError\nTimed Out"
+   "no_copy": 1,
+   "options": "Pending\nSuccess\nPartial Success\nError\nTimed Out",
+   "read_only": 1
   },
   {
-    "default": "0",
-    "fieldname": "submit_after_import",
-    "fieldtype": "Check",
-    "label": "Submit After Import",
-    "set_only_once": 1
-   },
+   "default": "0",
+   "fieldname": "submit_after_import",
+   "fieldtype": "Check",
+   "label": "Submit After Import",
+   "set_only_once": 1
+  },
   {
-    "fieldname": "import_preview",
-    "fieldtype": "HTML",
-    "label": "Import Preview"
-   },
-   {
-    "fieldname": "section_import_preview",
-    "fieldtype": "Section Break",
-    "label": "Preview"
-   },
-   {
-    "fieldname": "import_log_section",
-    "fieldtype": "Section Break",
-    "label": "Import Log"
-   },
-   {
-    "fieldname": "import_log_preview",
-    "fieldtype": "HTML",
-    "label": "Import Log Preview"
-   },
-   {
-    "fieldname": "payload_count",
-    "fieldtype": "Int",
-    "hidden": 1,
-    "label": "Payload Count",
-    "read_only": 1
-   }
+   "fieldname": "import_preview",
+   "fieldtype": "HTML",
+   "label": "Import Preview"
+  },
+  {
+   "fieldname": "section_import_preview",
+   "fieldtype": "Section Break",
+   "label": "Preview"
+  },
+  {
+   "fieldname": "import_log_section",
+   "fieldtype": "Section Break",
+   "label": "Import Log"
+  },
+  {
+   "fieldname": "import_log_preview",
+   "fieldtype": "HTML",
+   "label": "Import Log Preview"
+  },
+  {
+   "fieldname": "payload_count",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Payload Count",
+   "read_only": 1
+  },
+  {
+   "allow_bulk_edit": 1,
+   "depends_on": "eval:doc.amazon_type==\"MTR B2B\"",
+   "fieldname": "mtr_b2b",
+   "fieldtype": "Table",
+   "label": "MTR B2B",
+   "options": "Ecommerce MTR B2B"
+  },
+  {
+   "depends_on": "eval:doc.amazon_type==\"MTR B2B\"",
+   "fieldname": "mtr_b2b_attachment",
+   "fieldtype": "Attach",
+   "label": "MTR B2B Attachment"
+  },
+  {
+   "depends_on": "eval:doc.amazon_type==\"Stock Transfer\"",
+   "fieldname": "stock_transfer_attachment",
+   "fieldtype": "Attach",
+   "label": "Stock Transfer Attachment"
+  },
+  {
+   "depends_on": "eval:doc.amazon_type==\"Stock Transfer\"",
+   "fieldname": "stock_transfer",
+   "fieldtype": "Table",
+   "label": "Stock Transfer",
+   "options": "Amazon Stock Transfer"
+  },
+  {
+   "depends_on": "eval:doc.amazon_type==\"MTR B2C\"",
+   "fieldname": "mtr_b2c_attachment",
+   "fieldtype": "Attach",
+   "label": "MTR B2C Attachment"
+  },
+  {
+   "depends_on": "eval:doc.amazon_type==\"MTR B2C\"",
+   "fieldname": "mtr_b2c",
+   "fieldtype": "Table",
+   "label": "MTR B2C",
+   "options": "Amazon MTR B2C"
+  },
+  {
+   "fieldname": "error_html",
+   "fieldtype": "HTML",
+   "label": "Error Html"
+  },
+  {
+   "depends_on": "eval:doc.ecommerce_mapping==\"CRED\"",
+   "fieldname": "cred_attach",
+   "fieldtype": "Attach",
+   "label": "Cred Attach"
+  },
+  {
+   "depends_on": "eval:doc.ecommerce_mapping==\"CRED\"",
+   "fieldname": "cred_items",
+   "fieldtype": "Table",
+   "label": "Cred  Return Items",
+   "options": "Cred"
+  },
+  {
+   "depends_on": "eval:doc.ecommerce_mapping==\"Flipkart\"",
+   "fieldname": "flipkart_attach",
+   "fieldtype": "Attach",
+   "label": "Flipkart Attach"
+  },
+  {
+   "depends_on": "eval:doc.ecommerce_mapping==\"Flipkart\"",
+   "fieldname": "flipkart_items",
+   "fieldtype": "Table",
+   "label": "Flipkart Items",
+   "options": "Flipkart Items"
+  },
+  {
+   "depends_on": "eval:doc.ecommerce_mapping==\"Flipkart\"",
+   "fieldname": "flipkart_cashback",
+   "fieldtype": "Table",
+   "label": "Flipkart Cashback",
+   "options": "Flipkart Transaction Items"
+  },
+  {
+   "fieldname": "cred",
+   "fieldtype": "Table",
+   "label": "Cred  Items",
+   "options": "Cred Items"
+  }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-17 03:29:39.326786",
+ "modified": "2025-06-15 19:55:04.841447",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Ecommerce Bill Import",

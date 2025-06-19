@@ -1,0 +1,255 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-09 23:46:55.631075",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "refund_date_time",
+  "return_id",
+  "return_date_time",
+  "order_date_time",
+  "refund_reason",
+  "cancellation_source",
+  "liability",
+  "return_status",
+  "cred_order_item_id",
+  "return_shipment_status",
+  "sku_id",
+  "product_name",
+  "product_id",
+  "family",
+  "order_status",
+  "merchant_sku",
+  "merchant_id",
+  "brand",
+  "gmv",
+  "tax_rate",
+  "taxable_amount",
+  "tax_amount",
+  "gst_rate",
+  "seller_final_payout",
+  "warehouse_location_code",
+  "customer_pincode",
+  "awb",
+  "warehouse_pincode",
+  "fulfilment_type",
+  "final_reverse_shipment_cost_including_gst",
+  "courier_partner_name",
+  "courier_aggregator_name",
+  "zone",
+  "customer_state",
+  "warehouse_state",
+  "chargeable_weight_kg",
+  "chargeable_weight_kg_final",
+  "estimated_reverse_shipment_cost_including_gst"
+ ],
+ "fields": [
+  {
+   "fieldname": "refund_date_time",
+   "fieldtype": "Data",
+   "label": "refund_date_time"
+  },
+  {
+   "fieldname": "return_id",
+   "fieldtype": "Data",
+   "label": "return_id"
+  },
+  {
+   "fieldname": "return_date_time",
+   "fieldtype": "Data",
+   "label": "return_date_time"
+  },
+  {
+   "fieldname": "order_date_time",
+   "fieldtype": "Data",
+   "label": "order_date_time"
+  },
+  {
+   "fieldname": "refund_reason",
+   "fieldtype": "Data",
+   "label": "refund_reason"
+  },
+  {
+   "fieldname": "cancellation_source",
+   "fieldtype": "Data",
+   "label": "cancellation_source"
+  },
+  {
+   "fieldname": "liability",
+   "fieldtype": "Data",
+   "label": "liability"
+  },
+  {
+   "fieldname": "return_status",
+   "fieldtype": "Data",
+   "label": "return_status"
+  },
+  {
+   "fieldname": "cred_order_item_id",
+   "fieldtype": "Data",
+   "label": "cred_order_item_id"
+  },
+  {
+   "fieldname": "return_shipment_status",
+   "fieldtype": "Data",
+   "label": "return_shipment_status"
+  },
+  {
+   "fieldname": "sku_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "sku_id"
+  },
+  {
+   "fieldname": "product_name",
+   "fieldtype": "Data",
+   "label": "product_name"
+  },
+  {
+   "fieldname": "product_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "product_id"
+  },
+  {
+   "fieldname": "family",
+   "fieldtype": "Data",
+   "label": "family"
+  },
+  {
+   "fieldname": "order_status",
+   "fieldtype": "Data",
+   "label": "order_status"
+  },
+  {
+   "fieldname": "merchant_sku",
+   "fieldtype": "Data",
+   "label": "merchant_sku"
+  },
+  {
+   "fieldname": "merchant_id",
+   "fieldtype": "Data",
+   "label": "merchant_id"
+  },
+  {
+   "fieldname": "brand",
+   "fieldtype": "Data",
+   "label": "brand"
+  },
+  {
+   "fieldname": "gmv",
+   "fieldtype": "Data",
+   "label": "gmv"
+  },
+  {
+   "fieldname": "tax_rate",
+   "fieldtype": "Data",
+   "label": "Tax Rate"
+  },
+  {
+   "fieldname": "taxable_amount",
+   "fieldtype": "Data",
+   "label": "Taxable Amount"
+  },
+  {
+   "fieldname": "tax_amount",
+   "fieldtype": "Data",
+   "label": "Tax Amount"
+  },
+  {
+   "fieldname": "gst_rate",
+   "fieldtype": "Data",
+   "label": "gst_rate"
+  },
+  {
+   "fieldname": "seller_final_payout",
+   "fieldtype": "Data",
+   "label": "seller_final_payout"
+  },
+  {
+   "fieldname": "warehouse_location_code",
+   "fieldtype": "Data",
+   "label": "warehouse_location_code"
+  },
+  {
+   "fieldname": "customer_pincode",
+   "fieldtype": "Data",
+   "label": "customer_pincode"
+  },
+  {
+   "fieldname": "awb",
+   "fieldtype": "Data",
+   "label": "awb"
+  },
+  {
+   "fieldname": "warehouse_pincode",
+   "fieldtype": "Data",
+   "label": "warehouse_pincode"
+  },
+  {
+   "fieldname": "fulfilment_type",
+   "fieldtype": "Data",
+   "label": "fulfilment_type"
+  },
+  {
+   "fieldname": "final_reverse_shipment_cost_including_gst",
+   "fieldtype": "Data",
+   "label": "final_reverse_shipment_cost_including_gst"
+  },
+  {
+   "fieldname": "courier_partner_name",
+   "fieldtype": "Data",
+   "label": "courier_partner_name"
+  },
+  {
+   "fieldname": "courier_aggregator_name",
+   "fieldtype": "Data",
+   "label": "courier_aggregator_name"
+  },
+  {
+   "fieldname": "zone",
+   "fieldtype": "Data",
+   "label": "zone"
+  },
+  {
+   "fieldname": "customer_state",
+   "fieldtype": "Data",
+   "label": "customer_state"
+  },
+  {
+   "fieldname": "warehouse_state",
+   "fieldtype": "Data",
+   "label": "warehouse_state"
+  },
+  {
+   "fieldname": "chargeable_weight_kg",
+   "fieldtype": "Data",
+   "label": "chargeable_weight_kg"
+  },
+  {
+   "fieldname": "chargeable_weight_kg_final",
+   "fieldtype": "Data",
+   "label": "chargeable_weight_kg_final"
+  },
+  {
+   "fieldname": "estimated_reverse_shipment_cost_including_gst",
+   "fieldtype": "Data",
+   "label": "estimated_reverse_shipment_cost_including_gst"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-06-10 08:34:54.355570",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Cred",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

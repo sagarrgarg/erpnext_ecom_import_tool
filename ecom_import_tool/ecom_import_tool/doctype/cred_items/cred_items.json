@@ -1,0 +1,341 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-13 13:43:40.603958",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "order_date_time",
+  "order_item_id",
+  "order_status",
+  "sku_id",
+  "product_id",
+  "category",
+  "product_name",
+  "shopify_id",
+  "merchant_sku",
+  "merchant_id",
+  "brand",
+  "hsn_code",
+  "payment_id",
+  "pg_reference_id",
+  "payment_gateway",
+  "payment_method",
+  "issuer",
+  "card_brand",
+  "card_type",
+  "gmv",
+  "tax_rate",
+  "taxable_amount",
+  "tax_amount",
+  "paid_via_cred_balance",
+  "pg_cost_base",
+  "pg_rate",
+  "pg_cost_includig_tax",
+  "oms_type",
+  "oms_cost",
+  "payout_after_platform_cost_deductions",
+  "gst_rate_on_gmv",
+  "net_gmv",
+  "tcs_on_net_gmv",
+  "tds_on_net_gmv",
+  "payout_after_tax_deductions",
+  "fulfilment_type",
+  "warehouse_location_code",
+  "source_address_state",
+  "source_pincode",
+  "destination_address_state",
+  "destination_pincode",
+  "zone",
+  "chargeable_weight_in_kg",
+  "chargeable_weight_in_kg_final",
+  "estimated_shipment_cost_including_gst",
+  "payout_after_shipment_deduction",
+  "final_forward_shipment_cost_including_gst",
+  "forward_shipment_cost_sundry_adjustment",
+  "forward_shipment_cost_sundry_adjustment_reason",
+  "payout_after_adjustments",
+  "seller_final_payout",
+  "final_payout_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "order_date_time",
+   "fieldtype": "Data",
+   "label": "Order Date Time"
+  },
+  {
+   "fieldname": "order_item_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "order_item_id"
+  },
+  {
+   "fieldname": "order_status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Order Status"
+  },
+  {
+   "fieldname": "sku_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "SKU ID"
+  },
+  {
+   "fieldname": "product_id",
+   "fieldtype": "Data",
+   "label": "Product ID"
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Data",
+   "label": "Category"
+  },
+  {
+   "fieldname": "product_name",
+   "fieldtype": "Data",
+   "label": "Product Name"
+  },
+  {
+   "fieldname": "shopify_id",
+   "fieldtype": "Data",
+   "label": "Shopify ID"
+  },
+  {
+   "fieldname": "merchant_sku",
+   "fieldtype": "Data",
+   "label": "Merchant SKU"
+  },
+  {
+   "fieldname": "merchant_id",
+   "fieldtype": "Data",
+   "label": "Merchant ID"
+  },
+  {
+   "fieldname": "brand",
+   "fieldtype": "Data",
+   "label": "Brand"
+  },
+  {
+   "fieldname": "hsn_code",
+   "fieldtype": "Data",
+   "label": "HSN code"
+  },
+  {
+   "fieldname": "payment_id",
+   "fieldtype": "Data",
+   "label": "Payment ID"
+  },
+  {
+   "fieldname": "pg_reference_id",
+   "fieldtype": "Data",
+   "label": "PG Reference ID"
+  },
+  {
+   "fieldname": "payment_gateway",
+   "fieldtype": "Data",
+   "label": "Payment Gateway"
+  },
+  {
+   "fieldname": "payment_method",
+   "fieldtype": "Data",
+   "label": "Payment Method"
+  },
+  {
+   "fieldname": "issuer",
+   "fieldtype": "Data",
+   "label": "Issuer"
+  },
+  {
+   "fieldname": "card_brand",
+   "fieldtype": "Data",
+   "label": "Card Brand"
+  },
+  {
+   "fieldname": "card_type",
+   "fieldtype": "Data",
+   "label": "Card Type"
+  },
+  {
+   "fieldname": "gmv",
+   "fieldtype": "Data",
+   "label": "GMV"
+  },
+  {
+   "fieldname": "tax_rate",
+   "fieldtype": "Data",
+   "label": "Tax Rate"
+  },
+  {
+   "fieldname": "taxable_amount",
+   "fieldtype": "Data",
+   "label": "Taxable Amount"
+  },
+  {
+   "fieldname": "tax_amount",
+   "fieldtype": "Data",
+   "label": "Tax Amount"
+  },
+  {
+   "fieldname": "paid_via_cred_balance",
+   "fieldtype": "Data",
+   "label": "paid via CRED Balance"
+  },
+  {
+   "fieldname": "pg_cost_base",
+   "fieldtype": "Data",
+   "label": "PG Cost Base"
+  },
+  {
+   "fieldname": "pg_rate",
+   "fieldtype": "Data",
+   "label": "PG Rate"
+  },
+  {
+   "fieldname": "pg_cost_includig_tax",
+   "fieldtype": "Data",
+   "label": "PG Cost Includig Tax"
+  },
+  {
+   "fieldname": "oms_type",
+   "fieldtype": "Data",
+   "label": "OMS Type"
+  },
+  {
+   "fieldname": "oms_cost",
+   "fieldtype": "Data",
+   "label": "OMS Cost"
+  },
+  {
+   "fieldname": "payout_after_platform_cost_deductions",
+   "fieldtype": "Data",
+   "label": "Payout after Platform Cost Deductions"
+  },
+  {
+   "fieldname": "gst_rate_on_gmv",
+   "fieldtype": "Data",
+   "label": "GST Rate on GMV"
+  },
+  {
+   "fieldname": "net_gmv",
+   "fieldtype": "Data",
+   "label": "Net GMV"
+  },
+  {
+   "fieldname": "tcs_on_net_gmv",
+   "fieldtype": "Data",
+   "label": "TCS on Net GMV"
+  },
+  {
+   "fieldname": "tds_on_net_gmv",
+   "fieldtype": "Data",
+   "label": "TDS on Net GMV"
+  },
+  {
+   "fieldname": "payout_after_tax_deductions",
+   "fieldtype": "Data",
+   "label": "Payout after tax Deductions"
+  },
+  {
+   "fieldname": "fulfilment_type",
+   "fieldtype": "Data",
+   "label": "Fulfilment Type"
+  },
+  {
+   "fieldname": "warehouse_location_code",
+   "fieldtype": "Data",
+   "label": "Warehouse Location Code"
+  },
+  {
+   "fieldname": "source_address_state",
+   "fieldtype": "Data",
+   "label": "Source Address State"
+  },
+  {
+   "fieldname": "source_pincode",
+   "fieldtype": "Data",
+   "label": "Source Pincode"
+  },
+  {
+   "fieldname": "destination_address_state",
+   "fieldtype": "Data",
+   "label": "Destination Address State"
+  },
+  {
+   "fieldname": "destination_pincode",
+   "fieldtype": "Data",
+   "label": "Destination Pincode"
+  },
+  {
+   "fieldname": "zone",
+   "fieldtype": "Data",
+   "label": "Zone"
+  },
+  {
+   "fieldname": "chargeable_weight_in_kg",
+   "fieldtype": "Data",
+   "label": "Chargeable weight in KG"
+  },
+  {
+   "fieldname": "chargeable_weight_in_kg_final",
+   "fieldtype": "Data",
+   "label": "Chargeable weight in KG Final"
+  },
+  {
+   "fieldname": "estimated_shipment_cost_including_gst",
+   "fieldtype": "Data",
+   "label": "Estimated Shipment Cost Including GST"
+  },
+  {
+   "fieldname": "payout_after_shipment_deduction",
+   "fieldtype": "Data",
+   "label": "Payout after Shipment Deduction"
+  },
+  {
+   "fieldname": "final_forward_shipment_cost_including_gst",
+   "fieldtype": "Data",
+   "label": "Final Forward Shipment Cost Including GST"
+  },
+  {
+   "fieldname": "forward_shipment_cost_sundry_adjustment",
+   "fieldtype": "Data",
+   "label": "Forward Shipment Cost Sundry Adjustment"
+  },
+  {
+   "fieldname": "forward_shipment_cost_sundry_adjustment_reason",
+   "fieldtype": "Data",
+   "label": "Forward Shipment Cost Sundry Adjustment Reason"
+  },
+  {
+   "fieldname": "payout_after_adjustments",
+   "fieldtype": "Data",
+   "label": "Payout After Adjustments"
+  },
+  {
+   "fieldname": "seller_final_payout",
+   "fieldtype": "Data",
+   "label": "Seller Final Payout"
+  },
+  {
+   "fieldname": "final_payout_status",
+   "fieldtype": "Data",
+   "label": "Final Payout Status"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-06-15 19:55:25.121592",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Cred Items",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

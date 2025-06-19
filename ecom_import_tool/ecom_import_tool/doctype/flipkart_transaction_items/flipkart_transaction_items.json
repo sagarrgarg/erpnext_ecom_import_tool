@@ -1,0 +1,215 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-11 23:13:18.029394",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "seller_gstin",
+  "order_id",
+  "order_item_id",
+  "document_type",
+  "document_sub_type",
+  "credit_note_id_debit_note_id",
+  "invoice_amount",
+  "invoice_date",
+  "taxable_value",
+  "luxury_cess_rate",
+  "luxury_cess_amount",
+  "igst_rate",
+  "igst_amount",
+  "cgst_rate",
+  "cgst_amount",
+  "sgst_rate_or_utgst_as_applicable",
+  "sgst_amount_or_utgst_as_applicable",
+  "tcs_igst_rate",
+  "tcs_igst_amount",
+  "tcs_cgst_rate",
+  "tcs_cgst_amount",
+  "tcs_sgst_rate",
+  "tcs_sgst_amount",
+  "total_tcs_deducted",
+  "customers_delivery_state",
+  "is_shopsy_order",
+  "tds_rate",
+  "tds_amount",
+  "irn",
+  "business_name",
+  "business_gst_number"
+ ],
+ "fields": [
+  {
+   "fieldname": "seller_gstin",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Seller GSTIN"
+  },
+  {
+   "fieldname": "order_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Order ID"
+  },
+  {
+   "fieldname": "order_item_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Order Item ID"
+  },
+  {
+   "fieldname": "document_type",
+   "fieldtype": "Data",
+   "label": "Document Type"
+  },
+  {
+   "fieldname": "document_sub_type",
+   "fieldtype": "Data",
+   "label": "Document Sub Type"
+  },
+  {
+   "fieldname": "credit_note_id_debit_note_id",
+   "fieldtype": "Data",
+   "label": "Credit Note ID/ Debit Note ID"
+  },
+  {
+   "fieldname": "invoice_amount",
+   "fieldtype": "Data",
+   "label": "Invoice Amount"
+  },
+  {
+   "fieldname": "invoice_date",
+   "fieldtype": "Data",
+   "label": "Invoice Date"
+  },
+  {
+   "fieldname": "taxable_value",
+   "fieldtype": "Data",
+   "label": "Taxable Value"
+  },
+  {
+   "fieldname": "luxury_cess_rate",
+   "fieldtype": "Data",
+   "label": "Luxury Cess Rate"
+  },
+  {
+   "fieldname": "luxury_cess_amount",
+   "fieldtype": "Data",
+   "label": "Luxury Cess Amount"
+  },
+  {
+   "fieldname": "igst_rate",
+   "fieldtype": "Data",
+   "label": "IGST Rate"
+  },
+  {
+   "fieldname": "igst_amount",
+   "fieldtype": "Data",
+   "label": "IGST Amount"
+  },
+  {
+   "fieldname": "cgst_rate",
+   "fieldtype": "Data",
+   "label": "CGST Rate"
+  },
+  {
+   "fieldname": "cgst_amount",
+   "fieldtype": "Data",
+   "label": "CGST Amount"
+  },
+  {
+   "fieldname": "sgst_rate_or_utgst_as_applicable",
+   "fieldtype": "Data",
+   "label": "SGST Rate (or UTGST as applicable)"
+  },
+  {
+   "fieldname": "sgst_amount_or_utgst_as_applicable",
+   "fieldtype": "Data",
+   "label": "SGST Amount (Or UTGST as applicable)"
+  },
+  {
+   "fieldname": "tcs_igst_rate",
+   "fieldtype": "Data",
+   "label": "TCS IGST Rate"
+  },
+  {
+   "fieldname": "tcs_igst_amount",
+   "fieldtype": "Data",
+   "label": "TCS IGST Amount"
+  },
+  {
+   "fieldname": "tcs_cgst_rate",
+   "fieldtype": "Data",
+   "label": "TCS CGST Rate"
+  },
+  {
+   "fieldname": "tcs_cgst_amount",
+   "fieldtype": "Data",
+   "label": "TCS CGST Amount"
+  },
+  {
+   "fieldname": "tcs_sgst_rate",
+   "fieldtype": "Data",
+   "label": "TCS SGST Rate"
+  },
+  {
+   "fieldname": "tcs_sgst_amount",
+   "fieldtype": "Data",
+   "label": "TCS SGST Amount"
+  },
+  {
+   "fieldname": "total_tcs_deducted",
+   "fieldtype": "Data",
+   "label": "Total TCS Deducted"
+  },
+  {
+   "fieldname": "customers_delivery_state",
+   "fieldtype": "Data",
+   "label": "Customer's Delivery State"
+  },
+  {
+   "fieldname": "is_shopsy_order",
+   "fieldtype": "Data",
+   "label": "Is Shopsy Order?"
+  },
+  {
+   "fieldname": "tds_rate",
+   "fieldtype": "Data",
+   "label": "TDS Rate"
+  },
+  {
+   "fieldname": "tds_amount",
+   "fieldtype": "Data",
+   "label": "TDS Amount"
+  },
+  {
+   "fieldname": "irn",
+   "fieldtype": "Data",
+   "label": "IRN"
+  },
+  {
+   "fieldname": "business_name",
+   "fieldtype": "Data",
+   "label": "Business Name"
+  },
+  {
+   "fieldname": "business_gst_number",
+   "fieldtype": "Data",
+   "label": "Business GST Number"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-06-11 23:22:14.830479",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Flipkart Transaction Items",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

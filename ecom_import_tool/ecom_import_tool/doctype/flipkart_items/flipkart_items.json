@@ -1,0 +1,389 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-10 08:11:38.704835",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "seller_gstin",
+  "order_id",
+  "order_item_id",
+  "product_titledescription",
+  "fsn",
+  "sku",
+  "hsn_code",
+  "event_type",
+  "event_sub_type",
+  "order_type",
+  "fulfilment_type",
+  "order_date",
+  "order_approval_date",
+  "item_quantity",
+  "order_shipped_from_state",
+  "warehouse_id",
+  "price_before_discount",
+  "total_discount",
+  "seller_share",
+  "bank_offer_share",
+  "price_after_discount",
+  "shipping_charges",
+  "final_invoice_amount",
+  "type_of_tax",
+  "taxable_value",
+  "cst_rate",
+  "cst_amount",
+  "vat_rate",
+  "vat_amount",
+  "luxury_cess_rate",
+  "luxury_cess_amount",
+  "igst_rate",
+  "igst_amount",
+  "cgst_rate",
+  "cgst_amount",
+  "sgst_rate",
+  "sgst_amount",
+  "tcs_igst_rate",
+  "tcs_igst_amount",
+  "tcs_cgst_rate",
+  "tcs_cgst_amount",
+  "tcs_sgst_rate",
+  "tcs_sgst_amount",
+  "total_tcs_deducted",
+  "buyer_invoice_id",
+  "buyer_invoice_date",
+  "buyer_invoice_amount",
+  "customers_billing_pincode",
+  "customers_billing_state",
+  "customers_delivery_pincode",
+  "customers_delivery_state",
+  "usual_price",
+  "is_shopsy_order",
+  "tds_rate",
+  "tds_amount",
+  "irn",
+  "business_name",
+  "business_gst_number",
+  "beneficiary_name",
+  "imei"
+ ],
+ "fields": [
+  {
+   "fieldname": "seller_gstin",
+   "fieldtype": "Data",
+   "label": "Seller GSTIN"
+  },
+  {
+   "fieldname": "order_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Order ID"
+  },
+  {
+   "fieldname": "order_item_id",
+   "fieldtype": "Data",
+   "label": "Order Item ID"
+  },
+  {
+   "fieldname": "product_titledescription",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Product Title/Description"
+  },
+  {
+   "fieldname": "fsn",
+   "fieldtype": "Data",
+   "label": "FSN"
+  },
+  {
+   "fieldname": "sku",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "SKU"
+  },
+  {
+   "fieldname": "hsn_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "HSN Code"
+  },
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Data",
+   "label": "Event Type"
+  },
+  {
+   "fieldname": "event_sub_type",
+   "fieldtype": "Data",
+   "label": "Event Sub Type"
+  },
+  {
+   "fieldname": "order_type",
+   "fieldtype": "Data",
+   "label": "Order Type"
+  },
+  {
+   "fieldname": "fulfilment_type",
+   "fieldtype": "Data",
+   "label": "Fulfilment Type"
+  },
+  {
+   "fieldname": "order_date",
+   "fieldtype": "Data",
+   "label": "Order Date"
+  },
+  {
+   "fieldname": "order_approval_date",
+   "fieldtype": "Data",
+   "label": "Order Approval Date"
+  },
+  {
+   "fieldname": "item_quantity",
+   "fieldtype": "Data",
+   "label": "Item Quantity"
+  },
+  {
+   "fieldname": "order_shipped_from_state",
+   "fieldtype": "Data",
+   "label": "Order Shipped From (State)"
+  },
+  {
+   "fieldname": "warehouse_id",
+   "fieldtype": "Data",
+   "label": "Warehouse ID"
+  },
+  {
+   "fieldname": "price_before_discount",
+   "fieldtype": "Data",
+   "label": "Price before discount"
+  },
+  {
+   "fieldname": "total_discount",
+   "fieldtype": "Data",
+   "label": "Total Discount"
+  },
+  {
+   "fieldname": "seller_share",
+   "fieldtype": "Data",
+   "label": "Seller Share"
+  },
+  {
+   "fieldname": "bank_offer_share",
+   "fieldtype": "Data",
+   "label": "Bank Offer Share"
+  },
+  {
+   "fieldname": "price_after_discount",
+   "fieldtype": "Data",
+   "label": "Price after discount (Price before discount-Total discount)"
+  },
+  {
+   "fieldname": "shipping_charges",
+   "fieldtype": "Data",
+   "label": "Shipping Charges"
+  },
+  {
+   "fieldname": "final_invoice_amount",
+   "fieldtype": "Data",
+   "label": "Final Invoice Amount (Price after discount+Shipping Charges)"
+  },
+  {
+   "fieldname": "type_of_tax",
+   "fieldtype": "Data",
+   "label": "Type of tax"
+  },
+  {
+   "fieldname": "taxable_value",
+   "fieldtype": "Data",
+   "label": "Taxable Value (Final Invoice Amount -Taxes)"
+  },
+  {
+   "fieldname": "cst_rate",
+   "fieldtype": "Data",
+   "label": "CST Rate"
+  },
+  {
+   "fieldname": "cst_amount",
+   "fieldtype": "Data",
+   "label": "CST Amount"
+  },
+  {
+   "fieldname": "vat_rate",
+   "fieldtype": "Data",
+   "label": "VAT Rate"
+  },
+  {
+   "fieldname": "vat_amount",
+   "fieldtype": "Data",
+   "label": "VAT Amount"
+  },
+  {
+   "fieldname": "luxury_cess_rate",
+   "fieldtype": "Data",
+   "label": "Luxury Cess Rate"
+  },
+  {
+   "fieldname": "luxury_cess_amount",
+   "fieldtype": "Data",
+   "label": "Luxury Cess Amount"
+  },
+  {
+   "fieldname": "igst_rate",
+   "fieldtype": "Data",
+   "label": "IGST Rate"
+  },
+  {
+   "fieldname": "igst_amount",
+   "fieldtype": "Data",
+   "label": "IGST Amount"
+  },
+  {
+   "fieldname": "cgst_rate",
+   "fieldtype": "Data",
+   "label": "CGST Rate"
+  },
+  {
+   "fieldname": "cgst_amount",
+   "fieldtype": "Data",
+   "label": "CGST Amount"
+  },
+  {
+   "fieldname": "sgst_rate",
+   "fieldtype": "Data",
+   "label": "SGST Rate (or UTGST as applicable)"
+  },
+  {
+   "fieldname": "sgst_amount",
+   "fieldtype": "Data",
+   "label": "SGST Amount (Or UTGST as applicable)"
+  },
+  {
+   "fieldname": "tcs_igst_rate",
+   "fieldtype": "Data",
+   "label": "TCS IGST Rate"
+  },
+  {
+   "fieldname": "tcs_igst_amount",
+   "fieldtype": "Data",
+   "label": "TCS IGST Amount"
+  },
+  {
+   "fieldname": "tcs_cgst_rate",
+   "fieldtype": "Data",
+   "label": "TCS CGST Rate"
+  },
+  {
+   "fieldname": "tcs_cgst_amount",
+   "fieldtype": "Data",
+   "label": "TCS CGST Amount"
+  },
+  {
+   "fieldname": "tcs_sgst_rate",
+   "fieldtype": "Data",
+   "label": "TCS SGST Rate"
+  },
+  {
+   "fieldname": "tcs_sgst_amount",
+   "fieldtype": "Data",
+   "label": "TCS SGST Amount"
+  },
+  {
+   "fieldname": "total_tcs_deducted",
+   "fieldtype": "Data",
+   "label": "Total TCS Deducted"
+  },
+  {
+   "fieldname": "buyer_invoice_id",
+   "fieldtype": "Data",
+   "label": "Buyer Invoice ID"
+  },
+  {
+   "fieldname": "buyer_invoice_date",
+   "fieldtype": "Data",
+   "label": "Buyer Invoice Date"
+  },
+  {
+   "fieldname": "buyer_invoice_amount",
+   "fieldtype": "Data",
+   "label": "Buyer Invoice Amount"
+  },
+  {
+   "fieldname": "customers_billing_pincode",
+   "fieldtype": "Data",
+   "label": "Customer's Billing Pincode"
+  },
+  {
+   "fieldname": "customers_billing_state",
+   "fieldtype": "Data",
+   "label": "Customer's Billing State"
+  },
+  {
+   "fieldname": "customers_delivery_pincode",
+   "fieldtype": "Data",
+   "label": "Customer's Delivery Pincode"
+  },
+  {
+   "fieldname": "customers_delivery_state",
+   "fieldtype": "Data",
+   "label": "Customer's Delivery State"
+  },
+  {
+   "fieldname": "usual_price",
+   "fieldtype": "Data",
+   "label": "Usual Price"
+  },
+  {
+   "fieldname": "is_shopsy_order",
+   "fieldtype": "Data",
+   "label": "Is Shopsy Order?"
+  },
+  {
+   "fieldname": "tds_rate",
+   "fieldtype": "Data",
+   "label": "TDS Rate"
+  },
+  {
+   "fieldname": "tds_amount",
+   "fieldtype": "Data",
+   "label": "TDS Amount"
+  },
+  {
+   "fieldname": "irn",
+   "fieldtype": "Data",
+   "label": "IRN"
+  },
+  {
+   "fieldname": "business_name",
+   "fieldtype": "Data",
+   "label": "Business Name"
+  },
+  {
+   "fieldname": "business_gst_number",
+   "fieldtype": "Data",
+   "label": "Business GST Number"
+  },
+  {
+   "fieldname": "beneficiary_name",
+   "fieldtype": "Data",
+   "label": "Beneficiary Name"
+  },
+  {
+   "fieldname": "imei",
+   "fieldtype": "Data",
+   "label": "IMEI"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-06-10 08:34:01.732881",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Flipkart Items",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

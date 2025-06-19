@@ -47,6 +47,7 @@
    "label": "Ecom SKU Column Header"
   },
   {
+   "allow_bulk_edit": 1,
    "fieldname": "ecom_item_table",
    "fieldtype": "Table",
    "label": "Ecommerce Item Mapping",
@@ -58,6 +59,7 @@
    "label": "Warehouse"
   },
   {
+   "allow_bulk_edit": 1,
    "fieldname": "ecommerce_warehouse_mapping",
    "fieldtype": "Table",
    "label": "Ecommerce Warehouse Mapping",
@@ -69,6 +71,7 @@
    "label": "Additional Settings"
   },
   {
+   "allow_bulk_edit": 1,
    "fieldname": "ecommerce_gstin_mapping",
    "fieldtype": "Table",
    "label": "Ecommerce GSTIN Mapping",
@@ -91,7 +94,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-04-23 22:24:23.573441",
+ "modified": "2025-06-16 12:56:14.760201",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Ecommerce Mapping",

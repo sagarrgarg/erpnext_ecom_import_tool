@@ -10,10 +10,9 @@
 frappe.ui.form.on("Ecommerce Bill Import", {
 	refresh(frm) {
 		// Add import button if file is uploaded
-		if (frm.doc.import_file && frm.doc.status === "Pending") {
 			frm.add_custom_button(__("Start Import"), function() {
 				frm.call({
-					method: "start_import",
+					method: "create_invoice",
 					doc: frm.doc,
 					callback: function(r) {
 						if (r.message) {
@@ -31,7 +30,7 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 					}
 				});
 			}).addClass("btn-primary");
-		}
+		
 		
 		// Show preview when file is uploaded
 		if (frm.doc.import_file) {
@@ -44,34 +43,34 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 		}
 	},
 	
-	ecommerce_mapping: function(frm) {
-		if (frm.doc.ecommerce_mapping) {
-			frappe.call({
-				method: "frappe.client.get",
-				args: {
-					doctype: "Ecommerce Mapping",
-					name: frm.doc.ecommerce_mapping
-				},
-				callback: function(r) {
-					if (r.message) {
-						// Check if the platform is Amazon
-						if (r.message.platform === "Amazon") {
-							frm.set_df_property("amazon_type", "hidden", 0);
-							frm.set_df_property("amazon_type", "reqd", 1);
-						} else {
-							frm.set_df_property("amazon_type", "hidden", 1);
-							frm.set_df_property("amazon_type", "reqd", 0);
-							frm.set_value("amazon_type", "");
-						}
-					}
-				}
-			});
-		} else {
-			frm.set_df_property("amazon_type", "hidden", 1);
-			frm.set_df_property("amazon_type", "reqd", 0);
-			frm.set_value("amazon_type", "");
-		}
-	},
+	// ecommerce_mapping: function(frm) {
+	// 	if (frm.doc.ecommerce_mapping) {
+	// 		frappe.call({
+	// 			method: "frappe.client.get",
+	// 			args: {
+	// 				doctype: "Ecommerce Mapping",
+	// 				name: frm.doc.ecommerce_mapping
+	// 			},
+	// 			callback: function(r) {
+	// 				if (r.message) {
+	// 					// Check if the platform is Amazon
+	// 					if (r.message.platform === "Amazon") {
+	// 						frm.set_df_property("amazon_type", "hidden", 0);
+	// 						frm.set_df_property("amazon_type", "reqd", 1);
+	// 					} else {
+	// 						frm.set_df_property("amazon_type", "hidden", 1);
+	// 						frm.set_df_property("amazon_type", "reqd", 0);
+	// 						frm.set_value("amazon_type", "");
+	// 					}
+	// 				}
+	// 			}
+	// 		});
+	// 	} else {
+	// 		frm.set_df_property("amazon_type", "hidden", 1);
+	// 		frm.set_df_property("amazon_type", "reqd", 0);
+	// 		frm.set_value("amazon_type", "");
+	// 	}
+	// },
 	
 	show_preview: function(frm) {
 		// Show a preview of the uploaded file
@@ -110,6 +109,7 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 			}
 		});
 	},
+	
 	
 	show_import_log: function(frm) {
 		// Show import log

@@ -2,9 +2,9 @@
  {
   "docstatus": 0,
   "doctype": "Ecommerce Platform",
-  "ecom_name": "Amazon",
-  "modified": "2025-04-23 21:09:11.609918",
-  "name": "Amazon"
+  "ecom_name": "Jiomart",
+  "modified": "2025-04-23 21:09:24.545340",
+  "name": "Jiomart"
  },
  {
   "docstatus": 0,
@@ -16,15 +16,15 @@
  {
   "docstatus": 0,
   "doctype": "Ecommerce Platform",
-  "ecom_name": "Jiomart",
-  "modified": "2025-04-23 21:09:24.545340",
-  "name": "Jiomart"
+  "ecom_name": "CRED",
+  "modified": "2025-04-23 21:09:29.767042",
+  "name": "CRED"
  },
  {
   "docstatus": 0,
   "doctype": "Ecommerce Platform",
-  "ecom_name": "CRED",
-  "modified": "2025-04-23 21:09:29.767042",
-  "name": "CRED"
+  "ecom_name": "Amazon",
+  "modified": "2025-04-23 21:09:11.609918",
+  "name": "Amazon"
  }
 ]

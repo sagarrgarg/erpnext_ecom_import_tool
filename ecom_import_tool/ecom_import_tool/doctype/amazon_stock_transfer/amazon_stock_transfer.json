@@ -1,0 +1,249 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-02 09:35:15.781169",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "gstin_of_receiver",
+  "transaction_type",
+  "transaction_id",
+  "order_id",
+  "ship_from_fc",
+  "ship_from_city",
+  "ship_from_state",
+  "ship_from_country",
+  "ship_from_postal_code",
+  "ship_to_fc",
+  "ship_to_city",
+  "ship_to_state",
+  "ship_to_country",
+  "ship_to_postal_code",
+  "invoice_number",
+  "invoice_date",
+  "invoice_value",
+  "asin",
+  "sku",
+  "quantity",
+  "hsn_code",
+  "taxable_value",
+  "igst_rate",
+  "igst_amount",
+  "sgst_rate",
+  "sgst_amount",
+  "utgst_rate",
+  "utgst_amount",
+  "cgst_rate",
+  "cgst_amount",
+  "compensatory_cess_rate",
+  "compensatory_cess_amount",
+  "gstin_of_supplier",
+  "irn_number",
+  "irn_filing_status",
+  "irn_date",
+  "irn_error_code"
+ ],
+ "fields": [
+  {
+   "fieldname": "gstin_of_receiver",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Gstin Of Receiver"
+  },
+  {
+   "fieldname": "transaction_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Transaction Type"
+  },
+  {
+   "fieldname": "transaction_id",
+   "fieldtype": "Data",
+   "label": "Transaction Id"
+  },
+  {
+   "fieldname": "order_id",
+   "fieldtype": "Data",
+   "label": "Order Id"
+  },
+  {
+   "fieldname": "ship_from_fc",
+   "fieldtype": "Data",
+   "label": "Ship From Fc"
+  },
+  {
+   "fieldname": "ship_from_city",
+   "fieldtype": "Data",
+   "label": "Ship From City"
+  },
+  {
+   "fieldname": "ship_from_state",
+   "fieldtype": "Data",
+   "label": "Ship From State"
+  },
+  {
+   "fieldname": "ship_from_country",
+   "fieldtype": "Data",
+   "label": "Ship From Country"
+  },
+  {
+   "fieldname": "ship_from_postal_code",
+   "fieldtype": "Data",
+   "label": "Ship From Postal Code"
+  },
+  {
+   "fieldname": "ship_to_fc",
+   "fieldtype": "Data",
+   "label": "Ship To Fc"
+  },
+  {
+   "fieldname": "ship_to_city",
+   "fieldtype": "Data",
+   "label": "Ship To City"
+  },
+  {
+   "fieldname": "ship_to_state",
+   "fieldtype": "Data",
+   "label": "Ship To State"
+  },
+  {
+   "fieldname": "ship_to_country",
+   "fieldtype": "Data",
+   "label": "Ship To Country"
+  },
+  {
+   "fieldname": "ship_to_postal_code",
+   "fieldtype": "Data",
+   "label": "Ship To Postal Code"
+  },
+  {
+   "fieldname": "invoice_number",
+   "fieldtype": "Data",
+   "label": "Invoice Number"
+  },
+  {
+   "fieldname": "invoice_date",
+   "fieldtype": "Data",
+   "label": "Invoice Date"
+  },
+  {
+   "fieldname": "invoice_value",
+   "fieldtype": "Data",
+   "label": "Invoice Value"
+  },
+  {
+   "fieldname": "asin",
+   "fieldtype": "Data",
+   "label": "Asin"
+  },
+  {
+   "fieldname": "sku",
+   "fieldtype": "Data",
+   "label": "Sku"
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Data",
+   "label": "Quantity"
+  },
+  {
+   "fieldname": "hsn_code",
+   "fieldtype": "Data",
+   "label": "Hsn Code"
+  },
+  {
+   "fieldname": "taxable_value",
+   "fieldtype": "Data",
+   "label": "Taxable Value"
+  },
+  {
+   "fieldname": "igst_rate",
+   "fieldtype": "Data",
+   "label": "Igst Rate"
+  },
+  {
+   "fieldname": "igst_amount",
+   "fieldtype": "Data",
+   "label": "Igst Amount"
+  },
+  {
+   "fieldname": "sgst_rate",
+   "fieldtype": "Data",
+   "label": "Sgst Rate"
+  },
+  {
+   "fieldname": "sgst_amount",
+   "fieldtype": "Data",
+   "label": "Sgst Amount"
+  },
+  {
+   "fieldname": "utgst_rate",
+   "fieldtype": "Data",
+   "label": "Utgst Rate"
+  },
+  {
+   "fieldname": "utgst_amount",
+   "fieldtype": "Data",
+   "label": "Utgst Amount"
+  },
+  {
+   "fieldname": "cgst_rate",
+   "fieldtype": "Data",
+   "label": "Cgst Rate"
+  },
+  {
+   "fieldname": "cgst_amount",
+   "fieldtype": "Data",
+   "label": "Cgst Amount"
+  },
+  {
+   "fieldname": "compensatory_cess_rate",
+   "fieldtype": "Data",
+   "label": "Compensatory Cess Rate"
+  },
+  {
+   "fieldname": "compensatory_cess_amount",
+   "fieldtype": "Data",
+   "label": "Compensatory Cess Amount"
+  },
+  {
+   "fieldname": "gstin_of_supplier",
+   "fieldtype": "Data",
+   "label": "Gstin Of Supplier"
+  },
+  {
+   "fieldname": "irn_number",
+   "fieldtype": "Data",
+   "label": "Irn Number"
+  },
+  {
+   "fieldname": "irn_filing_status",
+   "fieldtype": "Data",
+   "label": "Irn Filing Status"
+  },
+  {
+   "fieldname": "irn_date",
+   "fieldtype": "Data",
+   "label": "Irn Date"
+  },
+  {
+   "fieldname": "irn_error_code",
+   "fieldtype": "Data",
+   "label": "Irn Error Code"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-06-02 09:42:51.214952",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Amazon Stock Transfer",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
