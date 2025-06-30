@@ -11,10 +11,16 @@
   "column_break_ngdu",
   "default_non_company_customer",
   "auto_create_business_customer",
+  "internal_company_customer",
+  "inter_company_supplier",
   "items_tab",
   "ecom_sku_column_header",
   "ecom_item_table",
+  "income_account",
   "warehouse_tab",
+  "default_company_warehouse",
+  "default_company_location",
+  "default_company_address",
   "ecommerce_warehouse_mapping",
   "additional_settings_tab",
   "ecommerce_gstin_mapping"
@@ -89,12 +95,48 @@
    "fieldname": "auto_create_business_customer",
    "fieldtype": "Check",
    "label": "Auto Create Business Customer"
+  },
+  {
+   "fieldname": "internal_company_customer",
+   "fieldtype": "Link",
+   "label": "Internal Company Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "inter_company_supplier",
+   "fieldtype": "Link",
+   "label": "Inter Company Supplier",
+   "options": "Supplier"
+  },
+  {
+   "fieldname": "default_company_warehouse",
+   "fieldtype": "Link",
+   "label": "Default Company Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "default_company_location",
+   "fieldtype": "Link",
+   "label": "Default Company Location",
+   "options": "Location"
+  },
+  {
+   "fieldname": "default_company_address",
+   "fieldtype": "Link",
+   "label": "Default Company Address",
+   "options": "Address"
+  },
+  {
+   "fieldname": "income_account",
+   "fieldtype": "Link",
+   "label": "Income Account",
+   "options": "Account"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-06-16 12:56:14.760201",
+ "modified": "2025-06-29 22:08:24.984885",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Ecommerce Mapping",

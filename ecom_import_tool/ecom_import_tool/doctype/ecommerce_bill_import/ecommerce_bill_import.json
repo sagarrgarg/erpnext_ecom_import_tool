@@ -180,6 +180,7 @@
    "options": "Flipkart Transaction Items"
   },
   {
+   "depends_on": "eval:doc.ecommerce_mapping==\"CRED\"",
    "fieldname": "cred",
    "fieldtype": "Table",
    "label": "Cred  Items",
@@ -189,7 +190,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-06-15 19:55:04.841447",
+ "modified": "2025-06-29 22:00:35.159115",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Ecommerce Bill Import",
