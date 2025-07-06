@@ -10,7 +10,6 @@
   "platform",
   "column_break_ngdu",
   "default_non_company_customer",
-  "auto_create_business_customer",
   "internal_company_customer",
   "inter_company_supplier",
   "items_tab",
@@ -20,7 +19,9 @@
   "warehouse_tab",
   "default_company_warehouse",
   "default_company_location",
+  "column_break_ybgs",
   "default_company_address",
+  "section_break_oiko",
   "ecommerce_warehouse_mapping",
   "additional_settings_tab",
   "ecommerce_gstin_mapping"
@@ -91,12 +92,6 @@
    "options": "Customer"
   },
   {
-   "default": "0",
-   "fieldname": "auto_create_business_customer",
-   "fieldtype": "Check",
-   "label": "Auto Create Business Customer"
-  },
-  {
    "fieldname": "internal_company_customer",
    "fieldtype": "Link",
    "label": "Internal Company Customer",
@@ -131,12 +126,20 @@
    "fieldtype": "Link",
    "label": "Income Account",
    "options": "Account"
+  },
+  {
+   "fieldname": "column_break_ybgs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_oiko",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-06-29 22:08:24.984885",
+ "modified": "2025-07-06 23:47:14.056407",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Ecommerce Mapping",

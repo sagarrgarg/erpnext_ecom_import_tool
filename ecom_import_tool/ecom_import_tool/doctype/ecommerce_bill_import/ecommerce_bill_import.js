@@ -9,6 +9,9 @@
 
 frappe.ui.form.on("Ecommerce Bill Import", {
 	refresh(frm) {
+		
+	
+		
 		// Add import button if file is uploaded
 			frm.add_custom_button(__("Start Import"), function() {
 				frm.call({
@@ -41,6 +44,52 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 		if (frm.doc.status && frm.doc.status !== "Pending") {
 			frm.trigger("show_import_log");
 		}
+		if (frm.doc.error_json) {
+			let rawStr = frm.doc.error_json;
+		
+			// Replace Python-style single quotes to double quotes
+			// let fixedStr = rawStr.replace(/'/g, '"');
+		
+			// Escape unescaped quotes inside message field values
+			// fixedStr = fixedStr.replace(/"message":\s*"([^"]*?)"(?=\s*[},])/g, function(match, p1) {
+			// 	// Escape inner quotes in message text
+			// 	let escaped = p1.replace(/"/g, '\\"');
+			// 	return `"message": "${escaped}"`;
+			// });
+		
+			// console.log("Fixed JSON String:", fixedStr);
+		
+			let error;
+			try {
+				error = JSON.parse(rawStr);
+			} catch (e) {
+				console.error("JSON parsing failed:", e);
+				frappe.msgprint("Error parsing error_json. Please check format.");
+				return;
+			}
+		
+			let html = `<table class="table table-bordered">
+				<thead><tr>
+					<th>Idx</th>
+					<th>Invoice ID</th>
+					<th>Event</th>
+					<th>Error Message</th>
+				</tr></thead><tbody>`;
+		
+			error.forEach(row => {
+				html += `<tr>
+					<td>${row.idx ?? ''}</td>
+					<td>${row.invoice_id}</td>
+					<td>${row.event}</td>
+					<td style="color:red;">${frappe.utils.escape_html(row.message)}</td>
+				</tr>`;
+			});
+		
+			html += `</tbody></table>`;
+			frm.fields_dict.error_html.$wrapper.html(html);
+			frm.refresh_field("error_html");
+		}
+
 	},
 	
 	// ecommerce_mapping: function(frm) {

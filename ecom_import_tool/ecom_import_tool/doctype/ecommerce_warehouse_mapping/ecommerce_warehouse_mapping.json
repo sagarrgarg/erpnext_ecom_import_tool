@@ -22,7 +22,7 @@
    "reqd": 1
   },
   {
-   "columns": 2,
+   "columns": 1,
    "fieldname": "ecom_warehouse_id",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -39,7 +39,7 @@
    "reqd": 1
   },
   {
-   "columns": 2,
+   "columns": 1,
    "fieldname": "location",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -51,7 +51,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-04-17 03:15:07.041046",
+ "modified": "2025-07-06 23:47:27.060153",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Ecommerce Warehouse Mapping",

@@ -1,0 +1,335 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-07-03 12:20:17.089416",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "seller_gstin",
+  "order_id",
+  "order_item_id",
+  "order_type",
+  "order_date",
+  "order_approval_date",
+  "type",
+  "shipment_number",
+  "original_shipment_number",
+  "fulfillment_type",
+  "fulfiller_name",
+  "product_titledescription",
+  "fsn__product_id",
+  "sku",
+  "hsn_code",
+  "order_status",
+  "event_type",
+  "event_sub_type",
+  "item_quantity",
+  "buyer_invoice_id",
+  "original_invoice_id",
+  "buyer_invoice_date",
+  "salesale_reversal_tcs_date",
+  "buyer_invoice_amount",
+  "order_shipped_from_state",
+  "order_billed_from_state",
+  "customers_billing_pincode",
+  "customers_billing_state",
+  "customers_delivery_pincode",
+  "customers_delivery_state",
+  "seller_coupon_code",
+  "offer_price",
+  "seller_coupon_amount",
+  "final_invoice_amount_offer_price_minus_seller_coupon_amount",
+  "type_of_tax",
+  "taxable_value",
+  "igst_rate",
+  "igst_amount",
+  "cgst_rate",
+  "cgst_amount",
+  "sgst_rate_or_utgst_as_applicable",
+  "sgst_amount_or_utgst_as_applicable",
+  "tcs_igst_rate",
+  "tcs_igst_amount",
+  "tcs_cgst_rate",
+  "tcs_cgst_amount",
+  "tcs_sgst_rate",
+  "tcs_sgst_amount",
+  "total_tcs_deducted",
+  "tds_194o_rate",
+  "tds_194o_amount"
+ ],
+ "fields": [
+  {
+   "fieldname": "seller_gstin",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Seller GSTIN"
+  },
+  {
+   "fieldname": "order_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Order ID"
+  },
+  {
+   "fieldname": "order_item_id",
+   "fieldtype": "Data",
+   "label": "Order Item ID"
+  },
+  {
+   "fieldname": "order_type",
+   "fieldtype": "Data",
+   "label": "Order Type"
+  },
+  {
+   "fieldname": "order_date",
+   "fieldtype": "Data",
+   "label": "Order Date"
+  },
+  {
+   "fieldname": "order_approval_date",
+   "fieldtype": "Data",
+   "label": "Order Approval Date"
+  },
+  {
+   "fieldname": "type",
+   "fieldtype": "Data",
+   "label": "Type"
+  },
+  {
+   "fieldname": "shipment_number",
+   "fieldtype": "Data",
+   "label": "Shipment Number"
+  },
+  {
+   "fieldname": "original_shipment_number",
+   "fieldtype": "Data",
+   "label": "Original Shipment Number"
+  },
+  {
+   "fieldname": "fulfillment_type",
+   "fieldtype": "Data",
+   "label": "Fulfillment Type"
+  },
+  {
+   "fieldname": "fulfiller_name",
+   "fieldtype": "Data",
+   "label": "Fulfiller Name"
+  },
+  {
+   "fieldname": "product_titledescription",
+   "fieldtype": "Small Text",
+   "label": "Product Title/Description"
+  },
+  {
+   "fieldname": "fsn__product_id",
+   "fieldtype": "Data",
+   "label": "FSN / Product ID"
+  },
+  {
+   "fieldname": "sku",
+   "fieldtype": "Data",
+   "label": "SKU"
+  },
+  {
+   "fieldname": "hsn_code",
+   "fieldtype": "Data",
+   "label": "HSN Code"
+  },
+  {
+   "fieldname": "order_status",
+   "fieldtype": "Data",
+   "label": "Order Status"
+  },
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Data",
+   "label": "Event Type"
+  },
+  {
+   "fieldname": "event_sub_type",
+   "fieldtype": "Data",
+   "label": "Event Sub Type"
+  },
+  {
+   "fieldname": "item_quantity",
+   "fieldtype": "Data",
+   "label": "Item Quantity"
+  },
+  {
+   "fieldname": "buyer_invoice_id",
+   "fieldtype": "Data",
+   "label": "Buyer Invoice ID"
+  },
+  {
+   "fieldname": "original_invoice_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Original Invoice ID"
+  },
+  {
+   "fieldname": "buyer_invoice_date",
+   "fieldtype": "Data",
+   "label": "Buyer Invoice Date"
+  },
+  {
+   "fieldname": "salesale_reversal_tcs_date",
+   "fieldtype": "Data",
+   "label": "Sale/Sale reversal TCS date"
+  },
+  {
+   "fieldname": "buyer_invoice_amount",
+   "fieldtype": "Data",
+   "label": "Buyer Invoice Amount"
+  },
+  {
+   "fieldname": "order_shipped_from_state",
+   "fieldtype": "Data",
+   "label": "Order Shipped From (State)"
+  },
+  {
+   "fieldname": "order_billed_from_state",
+   "fieldtype": "Data",
+   "label": "Order Billed From (State)"
+  },
+  {
+   "fieldname": "customers_billing_pincode",
+   "fieldtype": "Data",
+   "label": "Customer's Billing Pincode"
+  },
+  {
+   "fieldname": "customers_billing_state",
+   "fieldtype": "Data",
+   "label": "Customer's Billing State"
+  },
+  {
+   "fieldname": "customers_delivery_pincode",
+   "fieldtype": "Data",
+   "label": "Customer's Delivery Pincode"
+  },
+  {
+   "fieldname": "customers_delivery_state",
+   "fieldtype": "Data",
+   "label": "Customer's Delivery State"
+  },
+  {
+   "fieldname": "seller_coupon_code",
+   "fieldtype": "Data",
+   "label": "Seller Coupon Code"
+  },
+  {
+   "fieldname": "offer_price",
+   "fieldtype": "Data",
+   "label": "Offer Price"
+  },
+  {
+   "fieldname": "seller_coupon_amount",
+   "fieldtype": "Data",
+   "label": "Seller Coupon Amount"
+  },
+  {
+   "fieldname": "final_invoice_amount_offer_price_minus_seller_coupon_amount",
+   "fieldtype": "Data",
+   "label": "Final Invoice Amount (Offer Price minus Seller Coupon Amount)"
+  },
+  {
+   "fieldname": "type_of_tax",
+   "fieldtype": "Data",
+   "label": "Type of tax"
+  },
+  {
+   "fieldname": "taxable_value",
+   "fieldtype": "Data",
+   "label": "Taxable Value(Final Invoice Amount -Taxes)"
+  },
+  {
+   "fieldname": "igst_rate",
+   "fieldtype": "Data",
+   "label": "IGST Rate"
+  },
+  {
+   "fieldname": "igst_amount",
+   "fieldtype": "Data",
+   "label": "IGST Amount"
+  },
+  {
+   "fieldname": "cgst_rate",
+   "fieldtype": "Data",
+   "label": "CGST Rate"
+  },
+  {
+   "fieldname": "cgst_amount",
+   "fieldtype": "Data",
+   "label": "CGST Amount"
+  },
+  {
+   "fieldname": "sgst_rate_or_utgst_as_applicable",
+   "fieldtype": "Data",
+   "label": "SGST Rate (or UTGST as applicable)"
+  },
+  {
+   "fieldname": "sgst_amount_or_utgst_as_applicable",
+   "fieldtype": "Data",
+   "label": "SGST Amount (Or UTGST as applicable)"
+  },
+  {
+   "fieldname": "tcs_igst_rate",
+   "fieldtype": "Data",
+   "label": "TCS IGST Rate"
+  },
+  {
+   "fieldname": "tcs_igst_amount",
+   "fieldtype": "Data",
+   "label": "TCS IGST Amount"
+  },
+  {
+   "fieldname": "tcs_cgst_rate",
+   "fieldtype": "Data",
+   "label": "TCS CGST Rate"
+  },
+  {
+   "fieldname": "tcs_cgst_amount",
+   "fieldtype": "Data",
+   "label": "TCS CGST Amount"
+  },
+  {
+   "fieldname": "tcs_sgst_rate",
+   "fieldtype": "Data",
+   "label": "TCS SGST Rate"
+  },
+  {
+   "fieldname": "tcs_sgst_amount",
+   "fieldtype": "Data",
+   "label": "TCS SGST Amount"
+  },
+  {
+   "fieldname": "total_tcs_deducted",
+   "fieldtype": "Data",
+   "label": "Total TCS Deducted"
+  },
+  {
+   "fieldname": "tds_194o_rate",
+   "fieldtype": "Data",
+   "label": "TDS 194O Rate"
+  },
+  {
+   "fieldname": "tds_194o_amount",
+   "fieldtype": "Data",
+   "label": "TDS 194O Amount"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-07-03 15:02:37.236865",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "Jio Mart",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

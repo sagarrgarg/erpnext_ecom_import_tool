@@ -25,10 +25,13 @@
   "flipkart_attach",
   "flipkart_items",
   "flipkart_cashback",
+  "jio_mart_attach",
+  "jio_mart_items",
   "import_log_section",
   "import_log_preview",
   "payload_count",
-  "error_html"
+  "error_html",
+  "error_json"
  ],
  "fields": [
   {
@@ -61,7 +64,8 @@
    "default": "Pending",
    "fieldname": "status",
    "fieldtype": "Select",
-   "hidden": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Status",
    "no_copy": 1,
    "options": "Pending\nSuccess\nPartial Success\nError\nTimed Out",
@@ -185,12 +189,30 @@
    "fieldtype": "Table",
    "label": "Cred  Items",
    "options": "Cred Items"
+  },
+  {
+   "fieldname": "error_json",
+   "fieldtype": "Code",
+   "label": "Error json"
+  },
+  {
+   "depends_on": "eval:doc.ecommerce_mapping==\"Jiomart\"",
+   "fieldname": "jio_mart_items",
+   "fieldtype": "Table",
+   "label": "Jio Mart Items",
+   "options": "Jio Mart"
+  },
+  {
+   "depends_on": "eval:doc.ecommerce_mapping==\"Jiomart\"",
+   "fieldname": "jio_mart_attach",
+   "fieldtype": "Attach",
+   "label": "Jio Mart Attach"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-06-29 22:00:35.159115",
+ "modified": "2025-07-03 14:17:07.507299",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Ecommerce Bill Import",
