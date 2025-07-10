@@ -643,7 +643,6 @@ class EcommerceBillImport(Document):
 							si.customer = customer
 							si.posting_date = getdate(today())
 							si.custom_inv_no = invoice_no
-							si.taxes_and_charges = ""
 							si.taxes = []
 							si.update_stock = 1
 						items_append=[]
