@@ -137,9 +137,9 @@ fixtures = [
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Sales Invoice": "ecom_import_tool.override.CustomSalesInvoice"
+}
 
 # Document Events
 # ---------------

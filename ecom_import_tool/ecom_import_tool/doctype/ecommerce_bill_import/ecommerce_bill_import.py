@@ -561,12 +561,6 @@ class EcommerceBillImport(Document):
 					key=lambda x: getdate(x.buyer_invoice_date) if x.buyer_invoice_date else frappe.utils.getdate("1900-01-01")
             )
 
-
-
-
-
-
-
 	@frappe.whitelist()
 	def create_sales_invoice_mtr_b2b(self):
 		from frappe.utils import today, getdate
@@ -643,6 +637,8 @@ class EcommerceBillImport(Document):
 							si.customer = customer
 							si.posting_date = getdate(today())
 							si.custom_inv_no = invoice_no
+							si.custom_ecommerce_invoice_id=invoice_no
+							si.__newname=invoice_no
 							si.taxes = []
 							si.update_stock = 1
 						items_append=[]
@@ -756,6 +752,9 @@ class EcommerceBillImport(Document):
 						si_return.return_against = existing_si
 						si_return.customer = customer
 						si_return.posting_date = getdate(today())
+						si_return.custom_inv_no = child_row.credit_note_no
+						si_return.custom_ecommerce_invoice_id=child_row.credit_note_no
+						
 						si_return.custom_inv_no = invoice_no
 						si_return.update_stock = 1
 						items_append=[]
@@ -914,6 +913,8 @@ class EcommerceBillImport(Document):
 						si.customer = val
 						si.posting_date = getdate(today())
 						si.custom_inv_no = invoice_no
+						si.custom_ecommerce_invoice_id=invoice_no
+						si.__newname=invoice_no
 						si.taxes_and_charges = ""
 						
 						# si.taxes = []
@@ -1012,7 +1013,7 @@ class EcommerceBillImport(Document):
 
 					try:
 						if len(items_append)>0:
-							si.save(ignore_permissions=True)
+							si.save(ignore_permissions=True)		
 							if invoice_no not in error_names:
 								si.submit()
 								existing_si = si.name
@@ -1061,6 +1062,9 @@ class EcommerceBillImport(Document):
 					si_return.customer = val
 					si_return.posting_date = getdate(today())
 					si_return.custom_inv_no = invoice_no
+					si.custom_ecommerce_invoice_id=child_row.credit_note_no
+					si.__newname= child_row.credit_note_no
+
 					si_return.taxes = []
 					si_return.update_stock = 1
 					si_error=[]
@@ -1154,6 +1158,9 @@ class EcommerceBillImport(Document):
 						si_return.save(ignore_permissions=True)
 						if invoice_no not in si_error:
 							si_return.submit()
+							# si_return.db_set("name",child_row.credit_note_no)
+							# frappe.db.set_value("Sales Invoice",si.name ,"name",child_row.credit_note_no)
+
 							success_count += len(refund_items)
 					except Exception as submit_error:
 						for idx, _ in refund_items:
@@ -1264,6 +1271,8 @@ class EcommerceBillImport(Document):
 						})
 
 						if is_taxable:
+							doc.custom_ecommerce_invoice_id=invoice_no
+							doc.__newname=invoice_no
 							for tax_type, amount, acc_head in [
 								("CGST", flt(row.cgst_rate), "Output Tax CGST - KGOPL"),
 								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), "Output Tax SGST - KGOPL"),
@@ -1390,7 +1399,7 @@ class EcommerceBillImport(Document):
 					continue
 
 				existing = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.buyer_invoice_id,
+					"custom_inv_no": i.order_id,
 					"is_return": 0,
 					"docstatus": 1
 				})
@@ -1398,7 +1407,7 @@ class EcommerceBillImport(Document):
 					continue
 
 				draft = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.buyer_invoice_id,
+					"custom_inv_no": i.order_id,
 					"is_return": 0,
 					"docstatus": 0
 				})
@@ -1440,7 +1449,7 @@ class EcommerceBillImport(Document):
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = getdate(i.buyer_invoice_date)
-					si.custom_inv_no = i.buyer_invoice_id
+					si.custom_inv_no = i.order_id
 					si.taxes_and_charges = ""
 					si.update_stock = 1
 					if i.customers_billing_state:
@@ -1454,7 +1463,8 @@ class EcommerceBillImport(Document):
 						si.customer_address=customer_address_out_state
 					si.location = location
 					si.append("items", item_row)
-
+					si.custom_ecommerce_invoice_id=i.buyer_invoice_id
+					si.__newname=i.buyer_invoice_id
 					for tax_type, amount, acc_head in [
 						("CGST", flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
 						("SGST", flt(i.sgst_amount), "Output Tax SGST - KGOPL"),
@@ -1511,7 +1521,7 @@ class EcommerceBillImport(Document):
 					continue
 			
 				existing_return = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.buyer_invoice_id,
+					"custom_inv_no": i.order_id,
 					"is_return": 1,
 					"docstatus": 1
 				})
@@ -1519,7 +1529,7 @@ class EcommerceBillImport(Document):
 					continue
 
 				original_inv = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.buyer_invoice_id,
+					"custom_inv_no": i.order_id,
 					"is_return": 0,
 					"docstatus": 1
 				})
@@ -1527,7 +1537,7 @@ class EcommerceBillImport(Document):
 					raise Exception("Original invoice not found or not submitted")
 
 				return_draft = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.buyer_invoice_id,
+					"custom_inv_no": i.order_id,
 					"is_return": 1,
 					"docstatus": 0
 				})
@@ -1566,7 +1576,7 @@ class EcommerceBillImport(Document):
 				si.customer = customer
 				si.set_posting_time = 1
 				si.posting_date = getdate(i.buyer_invoice_date)
-				si.custom_inv_no = i.buyer_invoice_id
+				si.custom_inv_no = i.order_id
 				si.taxes_and_charges = ""
 				si.update_stock = 1
 				si.company_address = company_address
@@ -1577,6 +1587,8 @@ class EcommerceBillImport(Document):
 				si.location = location
 				si.is_return = 1
 				si.return_against = original_inv
+				si.custom_ecommerce_invoice_id=i.buyer_invoice_id
+				si.__newname=i.buyer_invoice_id
 				si.append("items", item_row)
 				if flt(i.cgst_amount)>0:
 					si.customer_address=customer_address_in_state
@@ -1601,7 +1613,6 @@ class EcommerceBillImport(Document):
 
 				si.save()
 				return_invoice.append(si.name)
-
 			except Exception as e:
 				errors.append({
 					"idx": i.idx,
@@ -1706,6 +1717,8 @@ class EcommerceBillImport(Document):
 				si.company_address = com_address
 				si.ecommerce_gstin = ecommerce_gstin
 				si.due_date=getdate(today())
+				si.custom_ecommerce_invoice_id=i.order_item_id
+				si.__newname=i.order_item_id
 				hsn_code=frappe.db.get_value("Item",itemcode,"gst_hsn_code")
 				si.append("items", {
 					"item_code": itemcode,
@@ -1820,6 +1833,8 @@ class EcommerceBillImport(Document):
 				si.company_address = com_address
 				si.ecommerce_gstin = ecommerce_gstin
 				si.is_return=1
+				si.custom_ecommerce_invoice_id="CR"+str(i.cred_order_item_id)
+				si.__newname="CR"+str(i.cred_order_item_id)
 				tax_amt = flt(i.gmv) *flt(i.gst_rate)
 				hsn_code=frappe.db.get_value("Item",itemcode,"gst_hsn_code")
 				si.append("items", {
@@ -1930,7 +1945,7 @@ class EcommerceBillImport(Document):
 					continue
 
 				existing = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.buyer_invoice_id,
+					"custom_inv_no": i.original_invoice_id,
 					"is_return": 0,
 					"docstatus": 1
 				})
@@ -1938,7 +1953,7 @@ class EcommerceBillImport(Document):
 					continue
 
 				draft = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.buyer_invoice_id,
+					"custom_inv_no": i.original_invoice_id,
 					"is_return": 0,
 					"docstatus": 0
 				})
@@ -1979,13 +1994,15 @@ class EcommerceBillImport(Document):
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = getdate(i.buyer_invoice_date)
-					si.custom_inv_no = i.buyer_invoice_id
+					si.custom_inv_no = i.original_invoice_id
 					if i.customers_billing_state:
 						state=i.customers_billing_state
 						si.place_of_supply=state_code_dict.get(str(state.lower()))
 					si.taxes_and_charges = ""
 					si.update_stock = 1
 					si.company_address = company_address
+					si.custom_ecommerce_invoice_id=i.buyer_invoice_id
+					si.__newname=i.buyer_invoice_id
 					si.ecommerce_gstin = ecommerce_gstin
 					
 					si.location = location
@@ -2052,7 +2069,7 @@ class EcommerceBillImport(Document):
 					continue
 			
 				existing_return = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.buyer_invoice_id,
+					"custom_inv_no": i.original_invoice_id,
 					"is_return": 1,
 					"docstatus": 1
 				})
@@ -2060,7 +2077,7 @@ class EcommerceBillImport(Document):
 					continue
 
 				original_inv = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.buyer_invoice_id,
+					"custom_inv_no": i.original_invoice_id,
 					"is_return": 0,
 					"docstatus": 1
 				})
@@ -2068,7 +2085,7 @@ class EcommerceBillImport(Document):
 					raise Exception("Original invoice not found or not submitted")
 
 				return_draft = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.buyer_invoice_id,
+					"custom_inv_no": i.original_invoice_id,
 					"is_return": 1,
 					"docstatus": 0
 				})
@@ -2107,7 +2124,7 @@ class EcommerceBillImport(Document):
 				si.customer = customer
 				si.set_posting_time = 1
 				si.posting_date = getdate(i.buyer_invoice_date)
-				si.custom_inv_no = i.buyer_invoice_id
+				si.custom_inv_no = i.original_invoice_id
 				si.taxes_and_charges = ""
 				si.update_stock = 1
 				si.company_address = company_address
@@ -2115,6 +2132,8 @@ class EcommerceBillImport(Document):
 				si.location = location
 				si.is_return = 1
 				si.return_against = original_inv
+				si.custom_ecommerce_invoice_id=i.buyer_invoice_id
+				si.__newname=i.buyer_invoice_id
 				si.append("items", item_row)
 				if i.customers_billing_state:
 					state=i.customers_billing_state
