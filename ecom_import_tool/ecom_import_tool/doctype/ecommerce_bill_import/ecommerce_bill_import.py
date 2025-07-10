@@ -62,8 +62,7 @@ class EcommerceBillImport(Document):
 			frappe.throw(_("Please select an Ecommerce Mapping"))
 
 	def before_save(self):
-		if self.import_file and not self.status:
-			self.status = "Pending"
+		frappe.msgprint("Data Import Started")
 		if self.ecommerce_mapping=="Amazon":
 			if self.amazon_type=="MTR B2B":
 				self.show_preview()
@@ -78,291 +77,33 @@ class EcommerceBillImport(Document):
 		if self.ecommerce_mapping=="Jiomart":
 			self.append_jio_mart()
 
-	def start_import(self):
-		if not self.import_file:
-			frappe.throw(_("Please upload a file to import"))
 
-		# Get mapping details
-		mapping = frappe.get_doc("Ecommerce Mapping", self.ecommerce_mapping)
-		
-		# Process the file based on platform type
-		if self.get_file_content():
-			try:
-				# Process the file
-				processed_data = self.process_file(mapping)
-				
-				# Create temporary csv file for standard import
-				temp_file = self.create_temp_import_file(processed_data)
-				
-				# Create Data Import doc
-				data_import = self.create_data_import(temp_file)
-				
-				# Start the import
-				data_import.start_import()
-				
-				self.status = "Success"
-				self.save()
-				return True
-			except Exception as e:
-				self.status = "Error"
-				self.save()
-				# frappe.log_error(f"Ecom Import Failed: {str(e)}", self.name)
-				return False
 	
-	def get_file_content(self):
-		return frappe.get_all("File", filters={"file_url": self.import_file}, fields=["file_name", "content"])[0]
 	
-	def process_file(self, mapping):
-		"""Process the uploaded file based on mapping configuration"""
-		file_content = self.get_file_content()
-		
-		if not file_content:
-			frappe.throw(_("Unable to read file content"))
-		
-		file_data = file_content.get("content")
-		
-		# Read the file using pandas
-		df = pd.read_csv(io.StringIO(file_data)) if file_content.get("file_name").endswith(".csv") else pd.read_excel(io.BytesIO(file_data))
-		
-		# Apply mapping transformations
-		processed_df = self.apply_mapping(df, mapping)
-		
-		return processed_df
-	
-	def apply_mapping(self, df, mapping):
-		"""Apply the configured mappings to the dataframe"""
-		# Get item mappings
-		item_mappings = {d.ecom_sku: d.erp_item for d in mapping.ecom_item_table}
-		
-		# Get warehouse mappings
-		warehouse_mappings = {d.ecommerce_warehouse: d.erp_warehouse for d in mapping.ecommerce_warehouse_mapping}
-		
-		# Get GSTIN mappings
-		gstin_mappings = {d.ecommerce_gstin: d.erp_gstin for d in mapping.ecommerce_gstin_mapping}
-		
-		# Apply transformations based on platform type
-		if mapping.platform == "Amazon":
-			return self.process_amazon_data(df, item_mappings, warehouse_mappings, gstin_mappings, mapping)
-		else:
-			return self.process_generic_data(df, item_mappings, warehouse_mappings, gstin_mappings)
-	
-	def process_amazon_data(self, df, item_mappings, warehouse_mappings, gstin_mappings, mapping):
-		"""Process Amazon-specific data format"""
-		# Implementation for Amazon data formats
-		
-		# For Amazon-specific processing based on amazon_type field
-		if self.amazon_type == "MTR B2B":
-			# B2B specific transformations
-			return self.process_amazon_b2b(df, item_mappings, warehouse_mappings, gstin_mappings, mapping)
-		elif self.amazon_type == "MTR B2C":
-			# B2C specific transformations
-			return self.process_amazon_b2c(df, item_mappings, warehouse_mappings, gstin_mappings, mapping)
-		elif self.amazon_type == "Stock Transfer":
-			# Stock transfer specific transformations
-			return self.process_amazon_stock_transfer(df, item_mappings, warehouse_mappings, gstin_mappings, mapping)
-		
-		# Default - if no specific type is set
-		return df
+
 	@frappe.whitelist()
 	def create_invoice(self):
+		frappe.msgprint("Data Import Started")
 		if self.ecommerce_mapping=="Amazon":
 			if self.amazon_type=="MTR B2B":
 				self.create_sales_invoice_mtr_b2b()
+				frappe.msgprint("Amazon Data Import Finished")
 			elif self.amazon_type=="MTR B2C":
 				self.create_sales_invoice_mtr_b2c()
-			else:
+				frappe.msgprint("Amazon Data Import Finished")
+			elif self.amazon_type=="Stock Transfer":
 				self.create_invoice_or_delivery_note()
+				frappe.msgprint("Amazon Data Import Finished")
 		if self.ecommerce_mapping=="CRED":
 			self.create_cred_sales_invoice()
+			frappe.msgprint("Cred Data Import Finished")
 		if self.ecommerce_mapping=="Flipkart":
 			self.create_flipkart_sales_invoice()
+			frappe.msgprint("Flipkart Data Import Finished")
 		if self.ecommerce_mapping=="Jiomart":
 			self.create_jio_mart()
+			frappe.msgprint("Jiomart Data Import Finished")
 			
-
-
-
-	def process_amazon_b2c(self, df, item_mappings, warehouse_mappings, gstin_mappings, mapping):
-		"""Process Amazon B2C data format"""
-		# Expected columns in Amazon B2C report:
-		# order-id, order-item-id, purchase-date, payments-date, reporting-date,
-		# promise-date, days-past-promise, buyer-email, buyer-name, buyer-phone-number,
-		# sku, product-name, quantity-purchased, quantity-shipped, quantity-to-ship,
-		# ship-service-level, recipient-name, ship-address-1, ship-address-2, 
-		# ship-address-3, ship-city, ship-state, ship-postal-code, ship-country,
-		# item-price, item-tax, shipping-price, shipping-tax, gift-wrap-price, 
-		# gift-wrap-tax, item-promotion-discount, ship-promotion-discount, etc.
-		
-		# Create a new dataframe for Sales Invoice
-		sales_invoices = []
-		
-		# Group by order-id to create one invoice per order
-		order_groups = df.groupby('order-id')
-		
-		# Track processed orders to avoid duplication
-		processed_orders = set()
-		
-		for order_id, order_data in order_groups:
-			if order_id in processed_orders:
-				continue
-				
-			processed_orders.add(order_id)
-			
-			# Get the first row for customer info
-			first_row = order_data.iloc[0]
-			
-			# Basic validation
-			if pd.isna(first_row['buyer-email']) or pd.isna(first_row['buyer-name']):
-				frappe.log_error(f"Missing customer information for order {order_id}", "Amazon B2C Import")
-				continue
-			
-			# Format purchase date
-			purchase_date = first_row['purchase-date']
-			try:
-				purchase_date = pd.to_datetime(purchase_date).strftime("%Y-%m-%d")
-			except:
-				purchase_date = datetime.now().strftime("%Y-%m-%d")
-			
-			# Customer info
-			customer = mapping.default_non_company_customer
-			
-			# Create invoice header
-			invoice = {
-				"doctype": "Sales Invoice",
-				"naming_series": "ACC-SINV-.YYYY.-",
-				"customer": customer,
-				"posting_date": purchase_date,
-				"due_date": purchase_date,
-				"amazon_order_id": order_id,
-				"is_pos": 0,
-				"update_stock": 1,
-				"items": []
-			}
-			
-			# Add items
-			for idx, row in order_data.iterrows():
-				sku = row['sku']
-				quantity = row['quantity-shipped'] if not pd.isna(row['quantity-shipped']) else row['quantity-purchased']
-				
-				if pd.isna(sku) or pd.isna(quantity) or float(quantity) <= 0:
-					continue
-					
-				# Map SKU to item code
-				item_code = item_mappings.get(sku)
-				if not item_code:
-					frappe.log_error(f"SKU {sku} not found in mapping for order {order_id}", "Amazon B2C Import")
-					continue
-				
-				# Calculate rates
-				rate = float(row['item-price']) if not pd.isna(row['item-price']) else 0
-				tax_amount = float(row['item-tax']) if not pd.isna(row['item-tax']) else 0
-				
-				# Get warehouse
-				warehouse = next(iter(warehouse_mappings.values()), None)
-				
-				# Create item
-				item = {
-					"item_code": item_code,
-					"qty": float(quantity),
-					"rate": rate,
-					"amount": rate * float(quantity),
-					"warehouse": warehouse,
-					"amazon_sku": sku,
-					"amazon_order_item_id": row['order-item-id']
-				}
-				
-				invoice["items"].append(item)
-			
-			# Add shipping charges if present
-			has_shipping = False
-			shipping_total = 0
-			for idx, row in order_data.iterrows():
-				shipping_price = float(row['shipping-price']) if not pd.isna(row['shipping-price']) else 0
-				if shipping_price > 0:
-					has_shipping = True
-					shipping_total += shipping_price
-			
-			if has_shipping:
-				# Add shipping as an item
-				shipping_item = {
-					"item_code": "Shipping Charges", # Replace with your shipping item code
-					"qty": 1,
-					"rate": shipping_total,
-					"amount": shipping_total,
-					"is_shipping_charge": 1
-				}
-				invoice["items"].append(shipping_item)
-			
-			# Only add invoice if it has items
-			if invoice["items"]:
-				sales_invoices.append(invoice)
-		
-		# Convert to dataframe
-		if sales_invoices:
-			# Create a dataframe for import
-			invoices_df = pd.json_normalize(sales_invoices, 'items', ['doctype', 'naming_series', 'customer', 
-				'posting_date', 'due_date', 'amazon_order_id', 'is_pos', 'update_stock'], 
-				record_prefix='items_')
-			
-			# Count the payloads
-			self.payload_count = len(sales_invoices)
-			
-			return invoices_df
-		
-		return pd.DataFrame()
-	
-	def process_amazon_b2b(self, df, item_mappings, warehouse_mappings, gstin_mappings, mapping):
-		"""Process Amazon B2B data format"""
-		# Implementation for B2B specific format
-		# This would be implemented similarly to B2C but with B2B specific logic
-		
-		# Placeholder for now
-		frappe.log_error("Amazon B2B import not yet implemented", "Amazon Import")
-		return pd.DataFrame()
-	
-	def process_amazon_stock_transfer(self, df, item_mappings, warehouse_mappings, gstin_mappings, mapping):
-		"""Process Amazon Stock Transfer data format"""
-		# Implementation for Stock Transfer specific format
-		
-		# Placeholder for now
-		frappe.log_error("Amazon Stock Transfer import not yet implemented", "Amazon Import") 
-		return pd.DataFrame()
-	
-	def process_generic_data(self, df, item_mappings, warehouse_mappings, gstin_mappings):
-		"""Process generic e-commerce data format"""
-		# Generic transformations for other platforms
-		return df
-	
-	def create_temp_import_file(self, df):
-		"""Create a temporary CSV file for the standard import process"""
-		csv_content = df.to_csv(index=False)
-		
-		# Create a temporary file
-		file_doc = frappe.new_doc("File")
-		file_doc.file_name = f"temp_import_{self.name}.csv"
-		file_doc.content = csv_content
-		file_doc.is_private = 1
-		file_doc.attached_to_doctype = self.doctype
-		file_doc.attached_to_name = self.name
-		file_doc.save()
-		
-		return file_doc.file_url
-	
-	def create_data_import(self, file_url):
-		"""Create a Data Import document to use the standard import process"""
-		# Determine what doctype to import to based on amazon_type or other logic
-		reference_doctype = "Sales Invoice" # Example - adjust based on your requirements
-		
-		data_import = frappe.new_doc("Data Import")
-		data_import.reference_doctype = reference_doctype
-		data_import.import_type = "Insert New Records"
-		data_import.import_file = file_url
-		data_import.submit_after_import = self.submit_after_import
-		data_import.mute_emails = 1
-		data_import.save()
-		
-		return data_import
-
 
 	def show_preview(self):
 		self.mtr_b2b=[]
@@ -1343,21 +1084,21 @@ class EcommerceBillImport(Document):
 									warehouse = wh_map.erp_warehouse
 									location = wh_map.location
 									com_address = wh_map.erp_address
-									customer_address_in_state=wh_map.customer_address_in_state
-									customer_address_out_state=wh_map.customer_address_out_state
+									# customer_address_in_state=wh_map.customer_address_in_state
+									# customer_address_out_state=wh_map.customer_address_out_state
 
 									break
 							if not warehouse:
 								warehouse=amazon.default_company_warehouse
 								location=amazon.default_company_location
 								com_address=amazon.default_company_address
-								customer_address_in_state=amazon.customer_address_in_state
-								customer_address_out_state=amazon.customer_address_out_state
+								# customer_address_in_state=amazon.customer_address_in_state
+								# customer_address_out_state=amazon.customer_address_out_state
 
-							if flt(child_row.cgst_tax)>0:
-								si_return.customer_address=customer_address_in_state
-							elif flt(child_row.igst_tax):
-								si_return.customer_address=customer_address_out_state
+							# if flt(child_row.cgst_tax)>0:
+							# 	si_return.customer_address=customer_address_in_state
+							# elif flt(child_row.igst_tax):
+							# 	si_return.customer_address=customer_address_out_state
 							company_gstin = frappe.db.get_value("Address", com_address, "gstin")
 							ecommerce_gstin = next((gstin.ecommerce_operator_gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.erp_company_gstin == company_gstin), None)
 
@@ -1451,208 +1192,157 @@ class EcommerceBillImport(Document):
 	@frappe.whitelist()
 	def create_invoice_or_delivery_note(self):
 		from frappe.utils import flt, today, getdate
+		import json
 
 		ecommerce_mapping = frappe.get_doc("Ecommerce Mapping", {"platform": "Amazon"})
-		customer = frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "internal_company_customer")
-
+		customer = ecommerce_mapping.internal_company_customer
 		errors = []
 		success_count = 0
 		invoice_groups = {}
 
-		# Group by invoice number
-		for idx, row in enumerate(self.mtr_b2c, 1):
+		# Group rows by invoice number
+		for idx, row in enumerate(self.stock_transfer, 1):
 			invoice_no = row.invoice_number
-			if invoice_no not in invoice_groups:
-				invoice_groups[invoice_no] = []
-			invoice_groups[invoice_no].append((idx, row))
+			invoice_groups.setdefault(invoice_no, []).append((idx, row))
 
 		for invoice_no, group_rows in invoice_groups.items():
 			try:
 				is_taxable = any(flt(row.igst_rate) > 0 for _, row in group_rows)
+				doctype = "Sales Invoice" if is_taxable else "Delivery Note"
+				doctype_m = "Purchase Invoice" if is_taxable else "Purchase Receipt"
+				existing_name = frappe.db.get_value(doctype, {
+					"custom_inv_no": invoice_no,
+					"is_return": 0
+				},"name")
 
-				# Create either Sales Invoice or Delivery Note
-				doc = frappe.new_doc("Sales Invoice" if is_taxable else "Delivery Note")
+				existing_name_purchase = frappe.db.get_value(doctype_m, {
+					"custom_inv_no": invoice_no,
+					"is_return": 0
+				},"name")
+				if existing_name:
+					existing_doc = frappe.get_doc(doctype, existing_name)
+					if existing_doc.docstatus == 0:
+						existing_doc.submit()
+				if existing_name_purchase:
+					existing_doc_pur = frappe.get_doc(doctype, existing_name_purchase)
+					if existing_doc_pur.docstatus == 0:
+						existing_doc_pur.submit()
 
-				if is_taxable:
-					doc.customer = customer
-					doc.custom_inv_no = invoice_no
-					doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
-					doc.taxes_and_charges = ""
-					doc.taxes = []
-					doc.update_stock = 1
-				else:
-					doc.customer = customer
-					doc.posting_date = getdate(today())
-					doc.custom_invoice_no = invoice_no
-					doc.set_warehouse = ""
-					doc.items = []
-				
-				for idx, row in group_rows:
-					# Get item code from Ecommerce Mapping
-					item_code = None
-					location=None
-					com_address=None
-					for e_item in ecommerce_mapping.ecom_item_table:
-						if e_item.ecom_item_id == row.sku:
-							item_code = e_item.erp_item
 					
-							break
-					if not item_code:
-						raise Exception(f"Item mapping not found for SKU {row.sku}")
+				# Create Sales Invoice or Delivery Note
+				if not existing_name:
+					doc = frappe.new_doc(doctype)
+					doc.customer = customer
+					doc.posting_date = getdate(group_rows[0][1].get("invoice_date")) if is_taxable else getdate(today())
+					doc.custom_inv_no = invoice_no if is_taxable else None
+					doc.custom_invoice_no = invoice_no if not is_taxable else None
+					doc.taxes = [] if is_taxable else None
+					doc.update_stock = 1 if is_taxable else None
+					doc.set_warehouse = "" if not is_taxable else None
+					doc.items = []
 
-					# Get warehouse mapping
-					warehouse = None
-					for wh in ecommerce_mapping.ecommerce_warehouse_mapping:
-						if wh.ecom_warehouse_id == row.ship_from_fc:
-							location = wh.location
-							com_address=wh.erp_address
+					for idx, row in group_rows:
+						item_code = next((e_item.erp_item for e_item in ecommerce_mapping.ecom_item_table
+							if e_item.ecom_item_id == row.get(ecommerce_mapping.ecom_sku_column_header)), None)
+						if not item_code:
+							raise Exception(f"Item mapping not found for SKU {row.sku}")
+
+						wh = next((wh for wh in ecommerce_mapping.ecommerce_warehouse_mapping
+							if wh.ecom_warehouse_id == row.ship_from_fc), None)
+						if not wh:
+							raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
+
+						doc.location = wh.location
+						doc.company_address = wh.erp_address
+						if row.ship_to_state:
+							doc.place_of_supply = state_code_dict.get(str(row.ship_to_state).lower())
+
+						doc.append("items", {
+							"item_code": item_code,
+							"qty": flt(row.quantity),
+							"rate": flt(row.taxable_value),
+							"warehouse": wh.erp_warehouse
+						})
+
+						if is_taxable:
+							for tax_type, amount, acc_head in [
+								("CGST", flt(row.cgst_rate), "Output Tax CGST - KGOPL"),
+								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), "Output Tax SGST - KGOPL"),
+								("IGST", flt(row.igst_rate), "Output Tax IGST - KGOPL")
+							]:
+								if amount > 0:
+									existing_tax = next((t for t in doc.taxes if t.account_head == acc_head), None)
+									if existing_tax:
+										existing_tax.tax_amount += amount
+									else:
+										doc.append("taxes", {
+											"charge_type": "On Net Total",
+											"account_head": acc_head,
+											"tax_amount": amount,
+											"description": tax_type
+										})
+
+					doc.save(ignore_permissions=True)
+					doc.submit()
+					success_count += len(group_rows)
+					frappe.msgprint(f"{doc.doctype} {doc.name} created for Invoice No {invoice_no}")
+
+				# Inter-company: Purchase Invoice or Receipt
+				if not existing_name_purchase:
+					pi_doc = frappe.new_doc("Purchase Invoice" if is_taxable else "Purchase Receipt")
+					pi_doc.supplier = ecommerce_mapping.inter_company_supplier
+					pi_doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
+					pi_doc.custom_invoice_no = invoice_no
+					pi_doc.customer = customer
+
+					for idx, row in group_rows:
+						item_code = next((e_item.erp_item for e_item in ecommerce_mapping.ecom_item_table
+							if e_item.ecom_item_id == row.get(ecommerce_mapping.ecom_sku_column_header)), None)
+						if not item_code:
+							raise Exception(f"Item mapping not found for SKU {row.sku}")
+
+						wh = next((wh for wh in ecommerce_mapping.ecommerce_warehouse_mapping
+							if wh.ecom_warehouse_id == row.ship_to_fc), None)
+
+						if not row.ship_to_fc or not wh:
+							warehouse = ecommerce_mapping.default_company_warehouse
+							location = ecommerce_mapping.default_company_location
+							com_address = ecommerce_mapping.default_company_address
+						else:
 							warehouse = wh.erp_warehouse
-							break
-					if not warehouse:
-						raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
-					
-					doc.location=location
-					doc.company_address=com_address
+							location = wh.location
+							com_address = wh.erp_address
 
-			
-					doc.append("items", {
-						"item_code": item_code,
-						"qty": -flt(row.quantity),
-						"rate": flt(row.tax_exclusive_gross),
-						"description": row.item_description,
-						"warehouse": warehouse,
-						"tax_rate": flt(row.total_tax_amount),
-						"margin_type": "Amount" if flt(row.item_promo_discount)>0 else None,
-						"margin_rate_or_amount":flt(row.item_promo_discount)
-					})
+						pi_doc.location = location
+						pi_doc.company_address = com_address
+						if row.ship_to_state:
+							pi_doc.place_of_supply = state_code_dict.get(str(row.ship_to_state).lower())
 
-				doc.save(ignore_permissions=True)
-				doc.submit()
-				success_count += len(group_rows)
-				success_count += len(group_rows)
-				frappe.msgprint(f"{doc.doctype} {doc.name} created for Invoice No {invoice_no}")
-				doctype="Sales Invoice" if is_taxable else "Delivery Note"
-				if doctype=="Sales Invoice":
-					doc=frappe.new_doc("Purchase Invoice")
-					doc.supplier=ecommerce_mapping.inter_company_supplier
-					doc.posting_date=getdate(group_rows[0][1].get("invoice_date"))
-					doc.customer = customer
-					doc.posting_date = getdate(today())
-					doc.custom_invoice_no = invoice_no
-					doc.items = []
-					for idx, row in group_rows:
-						# Get item code from Ecommerce Mapping
-						item_code = None
-						location=None
-						com_address=None
-						for e_item in ecommerce_mapping.ecom_item_table:
-							if e_item.ecom_item_id == row.sku:
-								item_code = e_item.erp_item
-								
-								break
-						if not item_code:
-							raise Exception(f"Item mapping not found for SKU {row.sku}")
-
-						# Get warehouse mapping
-						warehouse = None
-						for wh in ecommerce_mapping.ecommerce_warehouse_mapping:
-							if wh.ecom_warehouse_id == row.ship_to_fc:
-								warehouse = wh.erp_warehouse
-								location = wh.location
-								com_address=wh.erp_address
-								break
-						if not row.ship_to_fc:
-							warehouse=ecommerce_mapping.default_company_warehouse
-							location=ecommerce_mapping.default_company_location
-							com_address=ecommerce_mapping.default_company_address
-
-
-						doc.location=location
-						doc.company_address=com_address
-
-						doc.append("items", {
+						pi_doc.append("items", {
 							"item_code": item_code,
-							"qty": -flt(row.quantity),
-							"rate": flt(row.tax_exclusive_gross),
-							"description": row.item_description,
-							"warehouse": warehouse,
-							"tax_rate": flt(row.total_tax_amount),
-							"margin_type": "Amount" if flt(row.item_promo_discount)>0 else None,
-							"margin_rate_or_amount":flt(row.item_promo_discount)
+							"qty": flt(row.quantity),
+							"rate": flt(row.taxable_value),
+							"warehouse": warehouse
 						})
 
-					doc.save(ignore_permissions=True)
-					doc.submit()
-				else:
-					doc=frappe.new_doc("Purchase Receipt")
-					doc.supplier=ecommerce_mapping.inter_company_supplier
-					doc.posting_date=getdate(group_rows[0][1].get("invoice_date"))
-					doc.customer = customer
-					doc.posting_date = getdate(today())
-					doc.custom_invoice_no = invoice_no
-					doc.items = []
-					for idx, row in group_rows:
-						# Get item code from Ecommerce Mapping
-						item_code = None
-						location=None
-						com_address=None
-						for e_item in ecommerce_mapping.ecom_item_table:
-							if e_item.ecom_item_id == row.sku:
-								item_code = e_item.erp_item
-								break
-						if not item_code:
-							raise Exception(f"Item mapping not found for SKU {row.sku}")
-
-						# Get warehouse mapping
-						warehouse = None
-						for wh in ecommerce_mapping.ecommerce_warehouse_mapping:
-							if wh.ecom_warehouse_id == row.ship_to_fc:
-								warehouse = wh.erp_warehouse
-								location = wh.location
-								com_address=wh.erp_address
-								break
-						if not row.ship_to_fc:
-							warehouse=ecommerce_mapping.default_company_warehouse
-							location=ecommerce_mapping.default_company_location
-							com_address=ecommerce_mapping.default_company_address
-						
-						doc.location=location
-						doc.company_address=com_address
-
-						doc.append("items", {
-							"item_code": item_code,
-							"qty": -flt(row.quantity),
-							"rate": flt(row.tax_exclusive_gross),
-							"description": row.item_description,
-							"warehouse": warehouse,
-							"tax_rate": flt(row.total_tax_amount),
-							"margin_type": "Amount" if flt(row.item_promo_discount)>0 else None,
-							"margin_rate_or_amount":flt(row.item_promo_discount)
-						})
-
-					doc.save(ignore_permissions=True)
-					doc.submit()
-
-
+					pi_doc.save(ignore_permissions=True)
+					pi_doc.submit()
 
 			except Exception as e:
 				for idx, row in group_rows:
 					errors.append({
-						"row_no": idx,
-						"invoice_no": invoice_no,
-						"error": f"{str(e)}"
+						"idx": idx,
+						"invoice_id": invoice_no,
+						"message": f"{str(e)}"
 					})
-				# frappe.log_error(f"Failed for Invoice {invoice_no}: {str(e)}", "Invoice/Delivery Note Error")
 
-		if errors:
-			self.error_html = generate_error_html(errors)
-			self.status = "Partial Success" if success_count else "Error"
-		else:
-			self.error_html = ""
-			self.status = "Success"
-
+		# Final status update
+		self.error_json = json.dumps(errors) if errors else ""
+		self.status = "Partial Success" if errors and success_count else "Error" if errors else "Success"
 		self.save()
+
 		return success_count
+
 
 		
 	@frappe.whitelist()

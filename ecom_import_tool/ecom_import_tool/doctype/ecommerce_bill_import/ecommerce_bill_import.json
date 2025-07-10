@@ -75,6 +75,7 @@
    "default": "0",
    "fieldname": "submit_after_import",
    "fieldtype": "Check",
+   "hidden": 1,
    "label": "Submit After Import",
    "set_only_once": 1
   },
@@ -193,6 +194,7 @@
   {
    "fieldname": "error_json",
    "fieldtype": "Code",
+   "hidden": 1,
    "label": "Error json"
   },
   {
@@ -212,7 +214,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-07-03 14:17:07.507299",
+ "modified": "2025-07-07 17:16:44.957936",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Ecommerce Bill Import",
