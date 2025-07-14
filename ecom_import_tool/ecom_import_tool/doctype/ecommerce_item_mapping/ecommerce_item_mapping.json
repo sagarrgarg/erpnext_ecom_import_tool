@@ -13,7 +13,7 @@
  "fields": [
   {
    "bold": 1,
-   "columns": 2,
+   "columns": 5,
    "fieldname": "erp_item",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -22,7 +22,7 @@
    "reqd": 1
   },
   {
-   "columns": 4,
+   "columns": 5,
    "fieldname": "ecom_item_id",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -30,12 +30,10 @@
    "reqd": 1
   },
   {
-   "columns": 4,
    "fetch_from": "erp_item.item_name",
    "fieldname": "item_name",
    "fieldtype": "Data",
    "in_global_search": 1,
-   "in_list_view": 1,
    "label": "Item Name",
    "read_only": 1
   }
@@ -44,7 +42,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-07-14 17:01:39.787789",
+ "modified": "2025-07-14 18:51:01.674841",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Ecommerce Item Mapping",
