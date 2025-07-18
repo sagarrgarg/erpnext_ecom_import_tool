@@ -436,44 +436,38 @@ class EcommerceBillImport(Document):
 		# Reset child tables
 		self.flipkart_items = []
 		self.flipkart_cashback = []
+		if self.flipkart_items:
+			import numpy as np
+			import pandas as pd  # make sure pandas is imported if it's not already
+			from frappe.utils.data import getdate
 
-		if not self.flipkart_attach:
-			frappe.throw("Please attach a Flipkart file before running this method.")
+			def clean(val):
+				if pd.isna(val):
+					return 0 if isinstance(val, (int, float, np.number)) else ""
+				try:
+					float_val = float(val)
+					return float_val
+				except (ValueError, TypeError):
+					return "" if pd.isna(val) else val
 
-		print(f"Attachment URL: {self.flipkart_attach}")
+			csv_file_url = self.flipkart_attach
+			filename = csv_file_url.split('/files/')[-1]
+			csv_file_path = get_file_path(filename)
 
-		# Extract and resolve file path
-		filename = self.flipkart_attach.split('/files/')[-1]
-		file_path = get_file_path(filename)
+			try:
+				df = pd.read_csv(csv_file_path)
+			except FileNotFoundError:
+				frappe.throw(f"File not found: {csv_file_path}")
+			except Exception as e:
+				frappe.throw(f"Error reading CSV: {str(e)}")
 
-		print(f"Resolved file path: {file_path}")
-
-		if not os.path.exists(file_path):
-			frappe.throw(f"File not found: {file_path}")
-
-		try:
-			# Read the Excel file sheets
-			df = pd.read_excel(file_path, sheet_name=1)
-			df_cash = pd.read_excel(file_path, sheet_name=2)
-		except Exception as e:
-			frappe.throw(f"Failed to read Excel file: {e}")
-
-		# Get child table fields
-		item_meta = frappe.get_meta("Flipkart Items")
-		item_fields = [f.fieldname for f in item_meta.fields]
-
-		cash_meta = frappe.get_meta("Flipkart Transaction Items")
-		cash_fields = [f.fieldname for f in cash_meta.fields]
-
-		# Process flipkart_items sheet
-		for idx, row in df.iterrows():
-			print(f"\n--- Processing Item Row {idx + 1} ---")
-			child_row = self.append("flipkart_items", {})
-
-			for col in df.columns:
-				fieldname = col.strip().lower().replace(" ", "_")
-				if fieldname in item_fields:
-					child_row.set(fieldname, clean(row[col]))
+			for index, row in df.iterrows():
+				child_row = self.append("flipkart_items", {})
+				for column_name in df.columns:
+					fieldname = column_name.strip().lower().replace(' ', '_')
+					value = row[column_name]
+					if fieldname in [d.fieldname for d in frappe.get_meta('Flipkart Items').fields]:
+						child_row.set(fieldname, clean(value))
 
 			# Set Product Title/Description separately
 			child_row.set("product_titledescription", clean(row.get("Product Title/Description", "")))
@@ -490,17 +484,7 @@ class EcommerceBillImport(Document):
 			child_row.set("is_shopsy_order", clean(row.get("Is Shopsy Order?","")))
 
 
-		# Process flipkart_cashback sheet
-		for idx, row in df_cash.iterrows():
-			print(f"\n--- Processing Cashback Row {idx + 1} ---")
-			child_row = self.append("flipkart_cashback", {})
-
-			for col in df_cash.columns:
-				fieldname = col.strip().lower().replace(" ", "_")
-				if fieldname in cash_fields:
-					child_row.set(fieldname, clean(row[col]))
-
-			child_row.set("product_titledescription", clean(row.get("Product Title/Description", "")))
+	
 
 					
 	def append_jio_mart(self):
@@ -563,6 +547,7 @@ class EcommerceBillImport(Document):
 
 	@frappe.whitelist()
 	def create_sales_invoice_mtr_b2b(self):
+		error_names=[]
 		from frappe.utils import today, getdate
 
 		val = frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "default_non_company_customer")
@@ -654,9 +639,9 @@ class EcommerceBillImport(Document):
 										break
 
 								ecommerce_gstin = None
-								company_gstin = frappe.db.get_value("Address", com_address, "gstin")
+								# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
 								for gstin in amazon.ecommerce_gstin_mapping:
-									if gstin.erp_company_gstin == company_gstin:
+									if gstin.ecommerce_operator_gstin == child_row.seller_gstin:
 										ecommerce_gstin = gstin.ecommerce_operator_gstin
 										break
 
@@ -761,6 +746,9 @@ class EcommerceBillImport(Document):
 						for idx, child_row in refund_items:
 							try:
 								itemcode = next((i.erp_item for i in amazon.ecom_item_table if i.ecom_item_id == child_row.get(amazon.ecom_sku_column_header)), None)
+								if not itemcode:
+									error_names.append(invoice_no)
+									raise Exception(f"Item mapping not found for SKU: {child_row.get(amazon.ecom_sku_column_header)}")
 								warehouse, location, com_address = None, None, None
 								for wh_map in amazon.ecommerce_warehouse_mapping:
 									if wh_map.ecom_warehouse_id == child_row.warehouse_id:
@@ -772,7 +760,7 @@ class EcommerceBillImport(Document):
 								ecommerce_gstin = None
 								# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
 								for gstin in amazon.ecommerce_gstin_mapping:
-									if gstin.erp_company_gstin == child_row.seller_gstin:
+									if gstin.ecommerce_operator_gstin == child_row.seller_gstin:
 										ecommerce_gstin = gstin.ecommerce_operator_gstin
 										break
 
@@ -958,8 +946,11 @@ class EcommerceBillImport(Document):
 							# elif flt(child_row.igst_tax):
 							# 	si.customer_address=customer_address_out_state
 							# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
-							ecommerce_gstin = next((gstin.ecommerce_operator_gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.erp_company_gstin ==child_row.seller_gstin ), None)
-
+							ecommerce_gstin=None
+							for gstin in amazon.ecommerce_gstin_mapping:
+								if gstin.ecommerce_operator_gstin == child_row.seller_gstin:
+									ecommerce_gstin = gstin.ecommerce_operator_gstin
+							print("##################gstin",ecommerce_gstin)
 							if not si.location:
 								si.location = location
 							if not si.set_warehouse:
@@ -1102,8 +1093,11 @@ class EcommerceBillImport(Document):
 							# 	si_return.customer_address=customer_address_in_state
 							# elif flt(child_row.igst_tax):
 							# 	si_return.customer_address=customer_address_out_state
-							company_gstin = frappe.db.get_value("Address", com_address, "gstin")
-							ecommerce_gstin = next((gstin.ecommerce_operator_gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.erp_company_gstin == company_gstin), None)
+							# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
+							ecommerce_gstin=None
+							for gstin in amazon.ecommerce_gstin_mapping:
+								if gstin.ecommerce_operator_gstin == child_row.seller_gstin:
+									ecommerce_gstin = gstin.ecommerce_operator_gstin
 
 							if not si_return.location:
 								si_return.location = location
@@ -1378,7 +1372,7 @@ class EcommerceBillImport(Document):
 
 		def get_gstin(seller_gstin):
 			for gst in flipkart.ecommerce_gstin_mapping:
-				if gst.erp_company_gstin == seller_gstin:
+				if gst.ecommerce_operator_gstin == seller_gstin:
 					return gst.ecommerce_operator_gstin
 			return None
 
@@ -1696,7 +1690,7 @@ class EcommerceBillImport(Document):
 					# customer_address_in_state=amazon.customer_address_in_state
 					# customer_address_out_state=amazon.customer_address_out_state
 
-				gstin_data = next((gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.erp_company_gstin == i.seller_gstin), None)
+				gstin_data = next((gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.ecommerce_operator_gstin == i.seller_gstin), None)
 				ecommerce_gstin = gstin_data.ecommerce_operator_gstin if gstin_data else ""
 
 				si = frappe.new_doc("Sales Invoice") if not si_inv else frappe.get_doc("Sales Invoice", si_inv_draft)
@@ -1810,7 +1804,7 @@ class EcommerceBillImport(Document):
 					# customer_address_in_state=amazon.customer_address_in_state
 					# customer_address_out_state=amazon.customer_address_out_state
 				# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
-				gstin_data = next((gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.erp_company_gstin == i.seller_gstin), None)
+				gstin_data = next((gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.ecommerce_operator_gstin == i.seller_gstin), None)
 				ecommerce_gstin=None
 				if gstin_data:
 					ecommerce_gstin = gstin_data.ecommerce_operator_gstin
@@ -1923,7 +1917,7 @@ class EcommerceBillImport(Document):
 		def get_gstin(seller_gstin):
 			# company_gstin = frappe.db.get_value("Address", company_address, "gstin")
 			for gst in jiomart.ecommerce_gstin_mapping:
-				if gst.erp_company_gstin == seller_gstin:
+				if gst.ecommerce_operator_gstin == seller_gstin:
 					return gst.ecommerce_operator_gstin
 			return None
 
