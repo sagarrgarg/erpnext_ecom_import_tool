@@ -5,6 +5,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "seller_gstin",
   "refund_date_time",
   "return_id",
   "return_date_time",
@@ -236,13 +237,18 @@
    "fieldname": "estimated_reverse_shipment_cost_including_gst",
    "fieldtype": "Data",
    "label": "estimated_reverse_shipment_cost_including_gst"
+  },
+  {
+   "fieldname": "seller_gstin",
+   "fieldtype": "Data",
+   "label": "Seller Gstin"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-06-10 08:34:54.355570",
+ "modified": "2025-07-18 16:21:15.787711",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Cred",

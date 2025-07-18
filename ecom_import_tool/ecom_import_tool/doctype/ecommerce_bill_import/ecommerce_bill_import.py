@@ -770,9 +770,9 @@ class EcommerceBillImport(Document):
 										break
 
 								ecommerce_gstin = None
-								company_gstin = frappe.db.get_value("Address", com_address, "gstin")
+								# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
 								for gstin in amazon.ecommerce_gstin_mapping:
-									if gstin.erp_company_gstin == company_gstin:
+									if gstin.erp_company_gstin == child_row.seller_gstin:
 										ecommerce_gstin = gstin.ecommerce_operator_gstin
 										break
 
@@ -957,8 +957,8 @@ class EcommerceBillImport(Document):
 							# 	si.customer_address=customer_address_in_state
 							# elif flt(child_row.igst_tax):
 							# 	si.customer_address=customer_address_out_state
-							company_gstin = frappe.db.get_value("Address", com_address, "gstin")
-							ecommerce_gstin = next((gstin.ecommerce_operator_gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.erp_company_gstin == company_gstin), None)
+							# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
+							ecommerce_gstin = next((gstin.ecommerce_operator_gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.erp_company_gstin ==child_row.seller_gstin ), None)
 
 							if not si.location:
 								si.location = location
@@ -1376,10 +1376,9 @@ class EcommerceBillImport(Document):
 					return wh.erp_warehouse, wh.location, wh.erp_address,wh.customer_address_in_state,wh.customer_address_out_state
 			return flipkart.default_company_warehouse, flipkart.default_company_location, flipkart.default_company_address,flipkart.customer_address_in_state,flipkart.customer_address_out_state
 
-		def get_gstin(company_address):
-			company_gstin = frappe.db.get_value("Address", company_address, "gstin")
+		def get_gstin(seller_gstin):
 			for gst in flipkart.ecommerce_gstin_mapping:
-				if gst.erp_company_gstin == company_gstin:
+				if gst.erp_company_gstin == seller_gstin:
 					return gst.ecommerce_operator_gstin
 			return None
 
@@ -1424,7 +1423,7 @@ class EcommerceBillImport(Document):
 					raise Exception(f"Item mapping not found for SKU: {i.get(flipkart.ecom_sku_column_header)}")
 
 				warehouse, location, company_address,customer_address_in_state,customer_address_out_state = get_warehouse_info(i.warehouse_id)
-				ecommerce_gstin = get_gstin(company_address)
+				ecommerce_gstin = get_gstin(i.seller_gstin)
 				item_name = frappe.db.get_value("Item", item_code, "item_name")
 				hsn_code=frappe.db.get_value("Item",item_code,"gst_hsn_code")
 
@@ -1555,7 +1554,7 @@ class EcommerceBillImport(Document):
 					raise Exception(f"Item mapping not found for SKU: {i.get(flipkart.ecom_sku_column_header)}")
 
 				warehouse, location, company_address,customer_address_in_state,customer_address_out_state = get_warehouse_info(i.warehouse_id)
-				ecommerce_gstin = get_gstin(company_address)
+				ecommerce_gstin = get_gstin(i.seller_gstin)
 				item_name = frappe.db.get_value("Item", item_code, "item_name")
 				hsn_code=frappe.db.get_value("Item",item_code,"gst_hsn_code")
 
@@ -1697,8 +1696,7 @@ class EcommerceBillImport(Document):
 					# customer_address_in_state=amazon.customer_address_in_state
 					# customer_address_out_state=amazon.customer_address_out_state
 
-				company_gstin = frappe.db.get_value("Address", com_address, "gstin")
-				gstin_data = next((gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.erp_company_gstin == company_gstin), None)
+				gstin_data = next((gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.erp_company_gstin == i.seller_gstin), None)
 				ecommerce_gstin = gstin_data.ecommerce_operator_gstin if gstin_data else ""
 
 				si = frappe.new_doc("Sales Invoice") if not si_inv else frappe.get_doc("Sales Invoice", si_inv_draft)
@@ -1811,8 +1809,8 @@ class EcommerceBillImport(Document):
 					com_address=amazon.default_company_address
 					# customer_address_in_state=amazon.customer_address_in_state
 					# customer_address_out_state=amazon.customer_address_out_state
-				company_gstin = frappe.db.get_value("Address", com_address, "gstin")
-				gstin_data = next((gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.erp_company_gstin == company_gstin), None)
+				# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
+				gstin_data = next((gstin for gstin in amazon.ecommerce_gstin_mapping if gstin.erp_company_gstin == i.seller_gstin), None)
 				ecommerce_gstin=None
 				if gstin_data:
 					ecommerce_gstin = gstin_data.ecommerce_operator_gstin
@@ -1922,10 +1920,10 @@ class EcommerceBillImport(Document):
 		def get_warehouse_info():
 			return jiomart.default_company_warehouse, jiomart.default_company_location, jiomart.default_company_address
 
-		def get_gstin(company_address):
-			company_gstin = frappe.db.get_value("Address", company_address, "gstin")
+		def get_gstin(seller_gstin):
+			# company_gstin = frappe.db.get_value("Address", company_address, "gstin")
 			for gst in jiomart.ecommerce_gstin_mapping:
-				if gst.erp_company_gstin == company_gstin:
+				if gst.erp_company_gstin == seller_gstin:
 					return gst.ecommerce_operator_gstin
 			return None
 
@@ -1970,7 +1968,7 @@ class EcommerceBillImport(Document):
 					raise Exception(f"Item mapping not found for SKU: {i.get(jiomart.ecom_sku_column_header)}")
 
 				warehouse, location, company_address = get_warehouse_info()
-				ecommerce_gstin = get_gstin(company_address)
+				ecommerce_gstin = get_gstin(i.seller_gstin)
 				item_name = frappe.db.get_value("Item", item_code, "item_name")
 				hsn_code=frappe.db.get_value("Item",item_code,"gst_hsn_code")
 				item_row = {
@@ -2103,7 +2101,7 @@ class EcommerceBillImport(Document):
 					raise Exception(f"Item mapping not found for SKU: {i.get(jiomart.ecom_sku_column_header)}")
 
 				warehouse, location, company_address = get_warehouse_info()
-				ecommerce_gstin = get_gstin(company_address)
+				ecommerce_gstin = get_gstin(i.seller_gstin)
 				item_name = frappe.db.get_value("Item", item_code, "item_name")
 				hsn_code=frappe.db.get_value("Item",item_code,"gst_hsn_code")
 
