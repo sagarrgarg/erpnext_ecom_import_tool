@@ -550,7 +550,6 @@ class EcommerceBillImport(Document):
 		error_names=[]
 		from frappe.utils import today, getdate
 
-		val = frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "default_non_company_customer")
 		errors = []
 		success_count = 0
 		invoice_groups = {}
@@ -563,9 +562,9 @@ class EcommerceBillImport(Document):
 
 		for invoice_no, items_data in invoice_groups.items():
 			try:
-				shipment_items = [x for x in items_data if x[1].get("transaction_type") != "Refund"]
+				shipment_items = [x for x in items_data if x[1].get("transaction_type") in ["Refund","Cancel"]]
 				refund_items = [x for x in items_data if x[1].get("transaction_type") == "Refund"]
-
+				
 				customer = frappe.db.get_value("Customer", {"gstin": items_data[0][1].get("customer_bill_to_gstid")}, "name")
 				if not customer:
 					gst_details=get_gstin_info(items_data[0][1].get("customer_bill_to_gstid"))
@@ -630,6 +629,9 @@ class EcommerceBillImport(Document):
 						for idx, child_row in shipment_items:
 							try:
 								itemcode = next((i.erp_item for i in amazon.ecom_item_table if i.ecom_item_id == child_row.get(amazon.ecom_sku_column_header)), None)
+								if not itemcode:
+									error_names.append(invoice_no)
+									raise Exception(f"Item mapping not found for SKU: {child_row.get(amazon.ecom_sku_column_header)}")
 								warehouse, location, com_address = None, None, None
 								for wh_map in amazon.ecommerce_warehouse_mapping:
 									if wh_map.ecom_warehouse_id == child_row.warehouse_id:
@@ -642,7 +644,7 @@ class EcommerceBillImport(Document):
 								# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
 								for gstin in amazon.ecommerce_gstin_mapping:
 									if gstin.ecommerce_operator_gstin == child_row.seller_gstin:
-										ecommerce_gstin = gstin.ecommerce_operator_gstin
+										# ecommerce_gstin = gstin.ecommerce_operator_gstin
 										break
 
 								if not si.location:
@@ -687,9 +689,9 @@ class EcommerceBillImport(Document):
 							except Exception as item_error:
 								error_log.append(invoice_no)
 								errors.append({
-									"row_no": idx,
-									"invoice_no": invoice_no,
-									"error": f"Shipment item error: {str(item_error)}"
+									"idx": idx,
+									"invoice_id": invoice_no,
+									"message": f"Shipment item error: {str(item_error)}"
 								})
 						if len(items_append)>0:
 							si.save(ignore_permissions=True)
@@ -702,10 +704,11 @@ class EcommerceBillImport(Document):
 						# frappe.log_error(f"Shipment processing error for {invoice_no}: {str(ship_err)}", "Shipment Error")
 						for idx, _ in shipment_items:
 							errors.append({
-								"row_no": idx,
-								"invoice_no": invoice_no,
-								"error": f"Shipment processing error: {str(ship_err)}"
+								"idx": idx,
+								"invoice_id": invoice_no,
+								"message": f"Shipment processing error: {str(ship_err)}"
 							})
+
 
 				if refund_items and existing_si_draft and not existing_si:
 					draft_si = frappe.get_doc("Sales Invoice", existing_si_draft)
@@ -726,11 +729,11 @@ class EcommerceBillImport(Document):
 							si_return_error.append(invoice_no)
 
 							errors.append({
-								"row_no": refund_items[0][0],
-								"invoice_no": invoice_no,
-								"error": f"Refund requested but original submitted invoice not found for {invoice_no}."
+								"idx": refund_items[0][0],
+								"invoice_id": invoice_no,
+								"message": f"Refund requested but original submitted invoice not found for {invoice_no}."
 							})
-							continue
+							
 
 						si_return = frappe.new_doc("Sales Invoice")
 						si_return.is_return = 1
@@ -761,7 +764,7 @@ class EcommerceBillImport(Document):
 								# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
 								for gstin in amazon.ecommerce_gstin_mapping:
 									if gstin.ecommerce_operator_gstin == child_row.seller_gstin:
-										ecommerce_gstin = gstin.ecommerce_operator_gstin
+										# ecommerce_gstin = gstin.ecommerce_operator_gstin
 										break
 
 								if not si_return.location:
@@ -820,9 +823,9 @@ class EcommerceBillImport(Document):
 						# frappe.log_error(f"Refund processing error for {invoice_no}: {str(refund_err)}", "Refund Error")
 						for idx, _ in refund_items:
 							errors.append({
-								"row_no": idx,
-								"invoice_no": invoice_no,
-								"error": f"Refund processing error: {str(refund_err)}"
+								"idx": idx,
+								"invoice_id": invoice_no,
+								"message": f"Shipment item error: {refund_err}"
 							})
 
 			except Exception as e:
@@ -844,7 +847,7 @@ class EcommerceBillImport(Document):
 			self.status = "Success"
 			frappe.msgprint(f"All {success_count} items processed successfully!", indicator="green")
 
-		self.error_json = str(json.loads(errors))
+		self.error_json = str(json.dumps(errors))
 		self.save()
 		return success_count
 
