@@ -365,8 +365,8 @@ class EcommerceBillImport(Document):
 				frappe.throw(f"File not found at path: {xl_file_path}")
 
 			# Read Excel file using appropriate header row
-			df = pd.read_excel(xl_file_path, sheet_name=2)
-			df2 = pd.read_excel(xl_file_path, sheet_name=1)
+			df = pd.read_excel(xl_file_path, sheet_name=1)
+			df2 = pd.read_excel(xl_file_path, sheet_name=0)
 
 			# Get child table doctype name
 			child_doctype = None
@@ -413,75 +413,63 @@ class EcommerceBillImport(Document):
 			print(f"Total rows successfully mapped: {success_count}")
 
 	def append_flipkart(self):
-		import os
 		import pandas as pd
 		import frappe
 		from frappe.utils.file_manager import get_file_path
 
 		def clean(val):
-			"""Cleans cell value by removing leading/trailing spaces and quotes."""
+			"""Cleans cell value by removing spaces and surrounding quotes."""
 			if pd.isna(val):
 				return ""
-			try:
-				val = str(val).strip()
+			val = str(val).strip()
+			while (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+				val = val[1:-1].strip()
+			return val
 
-				# Remove surrounding quotes repeatedly
-				while (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
-					val = val[1:-1].strip()
+		# Check if file attached
+		if not self.flipkart_attach:
+			frappe.throw("Please attach a Flipkart CSV file before importing.")
 
-				return val
-			except Exception:
-				return ""
+		# Get full path
+		try:
+			filename = self.flipkart_attach.split("/files/")[-1]
+			file_path = get_file_path(filename)
+		except Exception as e:
+			frappe.throw(f"Unable to find or access the file: {str(e)}")
 
-		# Reset child tables
-		self.flipkart_items = []
-		self.flipkart_cashback = []
-		if self.flipkart_items:
-			import numpy as np
-			import pandas as pd  # make sure pandas is imported if it's not already
-			from frappe.utils.data import getdate
+		# Load CSV
+		try:
+			df = pd.read_csv(file_path)
+		except Exception as e:
+			frappe.throw(f"Failed to read CSV file: {str(e)}")
 
-			def clean(val):
-				if pd.isna(val):
-					return 0 if isinstance(val, (int, float, np.number)) else ""
-				try:
-					float_val = float(val)
-					return float_val
-				except (ValueError, TypeError):
-					return "" if pd.isna(val) else val
+		# Reset child table
+		self.set("flipkart_items", [])
 
-			csv_file_url = self.flipkart_attach
-			filename = csv_file_url.split('/files/')[-1]
-			csv_file_path = get_file_path(filename)
+		# Get valid fieldnames from child DocType
+		valid_fields = [d.fieldname for d in frappe.get_meta("Flipkart Items").fields]
 
-			try:
-				df = pd.read_csv(csv_file_path)
-			except FileNotFoundError:
-				frappe.throw(f"File not found: {csv_file_path}")
-			except Exception as e:
-				frappe.throw(f"Error reading CSV: {str(e)}")
+		# Iterate through rows
+		for _, row in df.iterrows():
+			child = self.append("flipkart_items", {})
+			for column in df.columns:
+				fieldname = column.strip().lower().replace(" ", "_")
+				if fieldname in valid_fields:
+					child.set(fieldname, clean(row[column]))
 
-			for index, row in df.iterrows():
-				child_row = self.append("flipkart_items", {})
-				for column_name in df.columns:
-					fieldname = column_name.strip().lower().replace(' ', '_')
-					value = row[column_name]
-					if fieldname in [d.fieldname for d in frappe.get_meta('Flipkart Items').fields]:
-						child_row.set(fieldname, clean(value))
-
-			# Set Product Title/Description separately
-			child_row.set("product_titledescription", clean(row.get("Product Title/Description", "")))
-			child_row.set("order_shipped_from_state", clean(row.get("Order Shipped From (State)", "")))
-			child_row.set("price_after_discount", clean(row.get("Price after discount (Price before discount-Total discount)", "")))
-			child_row.set("final_invoice_amount", clean(row.get("Final Invoice Amount (Price after discount+Shipping Charges)", "")))
-			child_row.set("taxable_value", clean(row.get("Taxable Value (Final Invoice Amount -Taxes)", "")))
-			child_row.set("sgst_rate", clean(row.get("SGST Rate (or UTGST as applicable)", "")))
-			child_row.set("sgst_amount", clean(row.get("SGST Amount (Or UTGST as applicable)", "")))
-			child_row.set("customers_billing_pincode", clean(row.get("Customer's Billing Pincode","")))
-			child_row.set("customers_billing_state", clean(row.get("Customer's Billing State","")))
-			child_row.set("customers_delivery_pincode", clean(row.get("Customer's Delivery Pincode","")))
-			child_row.set("customers_delivery_state", clean(row.get("Customer's Delivery State","")))
-			child_row.set("is_shopsy_order", clean(row.get("Is Shopsy Order?","")))
+			# Handle specific fields explicitly
+			child.set("product_titledescription", clean(row.get("Product Title/Description", "")))
+			child.set("order_shipped_from_state", clean(row.get("Order Shipped From (State)", "")))
+			child.set("price_after_discount", clean(row.get("Price after discount (Price before discount-Total discount)", "")))
+			child.set("final_invoice_amount", clean(row.get("Final Invoice Amount (Price after discount+Shipping Charges)", "")))
+			child.set("taxable_value", clean(row.get("Taxable Value (Final Invoice Amount -Taxes)", "")))
+			child.set("sgst_rate", clean(row.get("SGST Rate (or UTGST as applicable)", "")))
+			child.set("sgst_amount", clean(row.get("SGST Amount (Or UTGST as applicable)", "")))
+			child.set("customers_billing_pincode", clean(row.get("Customer's Billing Pincode", "")))
+			child.set("customers_billing_state", clean(row.get("Customer's Billing State", "")))
+			child.set("customers_delivery_pincode", clean(row.get("Customer's Delivery Pincode", "")))
+			child.set("customers_delivery_state", clean(row.get("Customer's Delivery State", "")))
+			child.set("is_shopsy_order", clean(row.get("Is Shopsy Order?", "")))
 
 
 	
@@ -1667,6 +1655,12 @@ class EcommerceBillImport(Document):
 
 				si_inv = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.order_item_id, "is_return": 0, "docstatus": 1}, "name")
 				if si_inv:
+					errors.append({
+						"idx": i.idx,
+						"invoice_id": i.order_item_id,
+						"event": "Invoice Already Exist",
+						"message": "Invoice Already Exist"
+					})
 					continue
 				si_inv_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.order_item_id, "is_return": 0, "docstatus": 0}, "name")
 
@@ -1711,7 +1705,7 @@ class EcommerceBillImport(Document):
 				si.set_warehouse = warehouse
 				si.company_address = com_address
 				si.ecommerce_gstin = ecommerce_gstin
-				si.due_date=getdate(today())
+				# si.due_date=getdate(i.order_item_id)
 				si.custom_ecommerce_invoice_id=i.order_item_id
 				si.__newname=i.order_item_id
 				hsn_code=frappe.db.get_value("Item",itemcode,"gst_hsn_code")
@@ -1743,7 +1737,7 @@ class EcommerceBillImport(Document):
 				for j in si.items:
 					j.item_tax_template=None
 					j.rate=flt(i.net_gmv)
-				si.due_date=getdate(today())
+				# si.due_date=getdate(today())
 				si.save(ignore_permissions=True)
 				si_items.append(si.name)
 
@@ -1775,11 +1769,23 @@ class EcommerceBillImport(Document):
 
 				si_inv = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.cred_order_item_id, "is_return": 1, "docstatus": 1}, "name")
 				if si_inv:
+					errors.append({
+						"idx": i.idx,
+						"invoice_id": i.order_item_id,
+						"event": "Return Found",
+						"message": "Return Invoice Found"
+					})
 					continue
 
 
 				original_si_inv = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.cred_order_item_id, "is_return": 0, "docstatus": 1}, "name")
 				if not original_si_inv:
+					errors.append({
+						"idx": i.idx,
+						"invoice_id": i.order_item_id,
+						"event": "Original Invoice Not Found",
+						"message": "Original Invoice Not  Found"
+					})
 					continue
 				si_inv_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.cred_order_item_id, "is_return": 1, "docstatus": 0}, "name")
 
@@ -1937,6 +1943,7 @@ class EcommerceBillImport(Document):
 					WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
 				""", i.order_item_id)
 				if exists_in_item:
+					
 					continue
 
 				existing = frappe.db.get_value("Sales Invoice", {
@@ -1954,6 +1961,7 @@ class EcommerceBillImport(Document):
 				})
 				if draft:
 					if exists_in_item:
+						
 						si_invoice.append(draft)
 						continue
 				else:

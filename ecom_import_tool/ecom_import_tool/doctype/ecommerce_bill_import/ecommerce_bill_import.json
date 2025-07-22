@@ -53,9 +53,9 @@
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval:doc.ecommerce_mapping==\"Amazon\"",
    "fieldname": "amazon_type",
    "fieldtype": "Select",
+   "hidden": 1,
    "label": "Amazon Type",
    "mandatory_depends_on": "eval:doc.ecommerce_mapping==\"Amazon\"",
    "options": "\nMTR B2B\nMTR B2C\nStock Transfer"
@@ -152,42 +152,42 @@
    "label": "Error Html"
   },
   {
-   "depends_on": "eval:doc.ecommerce_mapping==\"CRED\"",
    "fieldname": "cred_attach",
    "fieldtype": "Attach",
+   "hidden": 1,
    "label": "Cred Attach"
   },
   {
-   "depends_on": "eval:doc.ecommerce_mapping==\"CRED\"",
    "fieldname": "cred_items",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Cred  Return Items",
    "options": "Cred"
   },
   {
-   "depends_on": "eval:doc.ecommerce_mapping==\"Flipkart\"",
    "fieldname": "flipkart_attach",
    "fieldtype": "Attach",
+   "hidden": 1,
    "label": "Flipkart Attach"
   },
   {
-   "depends_on": "eval:doc.ecommerce_mapping==\"Flipkart\"",
    "fieldname": "flipkart_items",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Flipkart Items",
    "options": "Flipkart Items"
   },
   {
-   "depends_on": "eval:doc.ecommerce_mapping==\"Flipkart\"",
    "fieldname": "flipkart_cashback",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Flipkart Cashback",
    "options": "Flipkart Transaction Items"
   },
   {
-   "depends_on": "eval:doc.ecommerce_mapping==\"CRED\"",
    "fieldname": "cred",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Cred  Items",
    "options": "Cred Items"
   },
@@ -198,23 +198,23 @@
    "label": "Error json"
   },
   {
-   "depends_on": "eval:doc.ecommerce_mapping==\"Jiomart\"",
    "fieldname": "jio_mart_items",
    "fieldtype": "Table",
+   "hidden": 1,
    "label": "Jio Mart Items",
    "options": "Jio Mart"
   },
   {
-   "depends_on": "eval:doc.ecommerce_mapping==\"Jiomart\"",
    "fieldname": "jio_mart_attach",
    "fieldtype": "Attach",
+   "hidden": 1,
    "label": "Jio Mart Attach"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-07-07 17:16:44.957936",
+ "modified": "2025-07-22 20:19:27.007300",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Ecommerce Bill Import",
