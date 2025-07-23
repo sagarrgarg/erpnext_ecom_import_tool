@@ -2186,7 +2186,7 @@ class EcommerceBillImport(Document):
 					"message": f"Submit failed: {str(e)}"
 				})
 
-		self.error_json = str(errors)
+		self.error_json = str(json.dumps(errors))
 		if len(errors) == 0:
 			self.status = "Success"
 		elif len(self.flipkart_items) != len(errors):
