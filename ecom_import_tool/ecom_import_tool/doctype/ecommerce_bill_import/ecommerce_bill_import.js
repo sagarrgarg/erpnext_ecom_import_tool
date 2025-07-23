@@ -12,18 +12,7 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 					method: "create_invoice",
 					doc: frm.doc,
 					callback: function(r) {
-						if (r.message) {
-							frappe.show_alert({
-								message: __("Import started successfully"),
-								indicator: "green"
-							});
-							frm.reload_doc();
-						} else {
-							frappe.show_alert({
-								message: __("Import failed. Please check the logs."),
-								indicator: "red"
-							});
-						}
+					frm.refresh()
 					}
 				});
 			}).addClass("btn-primary");

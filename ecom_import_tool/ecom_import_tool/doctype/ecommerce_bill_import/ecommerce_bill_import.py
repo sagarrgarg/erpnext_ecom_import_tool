@@ -1358,8 +1358,8 @@ class EcommerceBillImport(Document):
 		def get_warehouse_info(warehouse_id):
 			for wh in flipkart.ecommerce_warehouse_mapping:
 				if wh.ecom_warehouse_id == warehouse_id:
-					return wh.erp_warehouse, wh.location, wh.erp_address,wh.customer_address_in_state,wh.customer_address_out_state
-			return flipkart.default_company_warehouse, flipkart.default_company_location, flipkart.default_company_address,flipkart.customer_address_in_state,flipkart.customer_address_out_state
+					return wh.erp_warehouse, wh.location, wh.erp_address
+			return flipkart.default_company_warehouse, flipkart.default_company_location, flipkart.default_company_address
 
 		def get_gstin(seller_gstin):
 			for gst in flipkart.ecommerce_gstin_mapping:
@@ -1407,7 +1407,7 @@ class EcommerceBillImport(Document):
 				if not item_code:
 					raise Exception(f"Item mapping not found for SKU: {i.get(flipkart.ecom_sku_column_header)}")
 
-				warehouse, location, company_address,customer_address_in_state,customer_address_out_state = get_warehouse_info(i.warehouse_id)
+				warehouse, location, company_address = get_warehouse_info(i.warehouse_id)
 				ecommerce_gstin = get_gstin(i.seller_gstin)
 				item_name = frappe.db.get_value("Item", item_code, "item_name")
 				hsn_code=frappe.db.get_value("Item",item_code,"gst_hsn_code")
@@ -1441,10 +1441,10 @@ class EcommerceBillImport(Document):
 						si.place_of_supply=state_code_dict.get(str(state.lower()))
 					si.company_address = company_address
 					si.ecommerce_gstin = ecommerce_gstin
-					if flt(i.cgst_amount)>0:
-						si.customer_address=customer_address_in_state
-					elif flt(i.igst_amount)>0:
-						si.customer_address=customer_address_out_state
+					# if flt(i.cgst_amount)>0:
+					# 	si.customer_address=customer_address_in_state
+					# elif flt(i.igst_amount)>0:
+					# 	si.customer_address=customer_address_out_state
 					si.location = location
 					si.append("items", item_row)
 					si.custom_ecommerce_invoice_id=i.buyer_invoice_id
@@ -1538,7 +1538,7 @@ class EcommerceBillImport(Document):
 				if not item_code:
 					raise Exception(f"Item mapping not found for SKU: {i.get(flipkart.ecom_sku_column_header)}")
 
-				warehouse, location, company_address,customer_address_in_state,customer_address_out_state = get_warehouse_info(i.warehouse_id)
+				warehouse, location, company_address = get_warehouse_info(i.warehouse_id)
 				ecommerce_gstin = get_gstin(i.seller_gstin)
 				item_name = frappe.db.get_value("Item", item_code, "item_name")
 				hsn_code=frappe.db.get_value("Item",item_code,"gst_hsn_code")
@@ -1574,10 +1574,10 @@ class EcommerceBillImport(Document):
 				si.custom_ecommerce_invoice_id=i.buyer_invoice_id
 				si.__newname=i.buyer_invoice_id
 				si.append("items", item_row)
-				if flt(i.cgst_amount)>0:
-					si.customer_address=customer_address_in_state
-				elif flt(i.igst_amount):
-					si.customer_address=customer_address_out_state
+				# if flt(i.cgst_amount)>0:
+				# 	si.customer_address=customer_address_in_state
+				# elif flt(i.igst_amount):
+				# 	si.customer_address=customer_address_out_state
 				for tax_type, amount, acc_head in [
 					("CGST", flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
 					("SGST", flt(i.sgst_amount), "Output Tax SGST - KGOPL"),
@@ -1769,12 +1769,6 @@ class EcommerceBillImport(Document):
 
 				si_inv = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.cred_order_item_id, "is_return": 1, "docstatus": 1}, "name")
 				if si_inv:
-					errors.append({
-						"idx": i.idx,
-						"invoice_id": i.order_item_id,
-						"event": "Return Found",
-						"message": "Return Invoice Found"
-					})
 					continue
 
 
@@ -1942,9 +1936,9 @@ class EcommerceBillImport(Document):
 					JOIN `tabSales Invoice` si ON sii.parent = si.name
 					WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
 				""", i.order_item_id)
-				if exists_in_item:
-					
-					continue
+				# if exists_in_item:
+				# 	si_invoice.append(draft)
+				# 	continue
 
 				existing = frappe.db.get_value("Sales Invoice", {
 					"custom_inv_no": i.original_invoice_id,
@@ -2031,7 +2025,7 @@ class EcommerceBillImport(Document):
 					si.save(ignore_permissions=True)
 					for j in si.items:
 						j.item_tax_template=None
-						j.rate=flt(i.net_gmv)
+						j.rate=flt(i.taxable_value)
 					si.due_date=getdate(today())
 					si.save(ignore_permissions=True)
 					si_invoice.append(si.name)
@@ -2068,8 +2062,8 @@ class EcommerceBillImport(Document):
 					JOIN `tabSales Invoice` si ON sii.parent = si.name
 					WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 1
 				""", i.order_item_id)
-				if exists_in_item:
-					continue
+				# if exists_in_item:
+				# 	continue
 			
 				existing_return = frappe.db.get_value("Sales Invoice", {
 					"custom_inv_no": i.original_invoice_id,
@@ -2161,7 +2155,7 @@ class EcommerceBillImport(Document):
 				si.save(ignore_permissions=True)
 				for j in si.items:
 					j.item_tax_template=None
-					j.rate=flt(i.net_gmv)
+					j.rate=flt(i.taxable_value)
 				si.due_date=getdate(today())
 				si.save(ignore_permissions=True)
 				return_invoice.append(si.name)
