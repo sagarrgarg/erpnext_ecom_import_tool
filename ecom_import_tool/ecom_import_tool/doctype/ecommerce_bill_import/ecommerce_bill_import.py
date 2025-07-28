@@ -550,7 +550,7 @@ class EcommerceBillImport(Document):
 
 		for invoice_no, items_data in invoice_groups.items():
 			try:
-				shipment_items = [x for x in items_data if x[1].get("transaction_type") in ["Refund","Cancel"]]
+				shipment_items = [x for x in items_data if x[1].get("transaction_type") not in ["Refund","Cancel"]]
 				refund_items = [x for x in items_data if x[1].get("transaction_type") == "Refund"]
 				
 				customer = frappe.db.get_value("Customer", {"gstin": items_data[0][1].get("customer_bill_to_gstid")}, "name")
@@ -586,7 +586,6 @@ class EcommerceBillImport(Document):
 
 					
 					
-
 				existing_si_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 0, "is_return": 0}, "name")
 				existing_si = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 1, "is_return": 0}, "name")
 
@@ -627,6 +626,9 @@ class EcommerceBillImport(Document):
 										location = wh_map.location
 										com_address = wh_map.erp_address
 										break
+								if not warehouse:
+									error_names.append(invoice_no)
+									raise Exception(f"Warehouse Mapping not found")
 
 								ecommerce_gstin = None
 								# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
@@ -635,9 +637,9 @@ class EcommerceBillImport(Document):
 										# ecommerce_gstin = gstin.ecommerce_operator_gstin
 										break
 
-								if not si.location:
+								if location:
 									si.location = location
-								if not si.set_warehouse:
+								if warehouse:
 									si.set_warehouse = warehouse
 
 								si.company_address = com_address
