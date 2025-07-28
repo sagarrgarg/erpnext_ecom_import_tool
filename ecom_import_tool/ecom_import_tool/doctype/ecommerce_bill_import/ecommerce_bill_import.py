@@ -1203,12 +1203,14 @@ class EcommerceBillImport(Document):
 				doctype_m = "Purchase Invoice" if is_taxable else "Purchase Receipt"
 				existing_name = frappe.db.get_value(doctype, {
 					"custom_inv_no": invoice_no,
-					"is_return": 0
+					"is_return": 0,
+					"docstatus":["!=",2]
 				},"name")
 
 				existing_name_purchase = frappe.db.get_value(doctype_m, {
 					"custom_inv_no": invoice_no,
-					"is_return": 0
+					"is_return": 0,
+					"docstatus":["!=",2]
 				},"name")
 				if existing_name:
 					existing_doc = frappe.get_doc(doctype, existing_name)
@@ -1226,10 +1228,10 @@ class EcommerceBillImport(Document):
 					doc.customer = customer
 					doc.posting_date = getdate(group_rows[0][1].get("invoice_date")) if is_taxable else getdate(today())
 					doc.custom_inv_no = invoice_no if is_taxable else None
-					doc.custom_invoice_no = invoice_no if not is_taxable else None
 					doc.taxes = [] if is_taxable else None
 					doc.update_stock = 1 if is_taxable else None
 					doc.set_warehouse = "" if not is_taxable else None
+					doc.__newname=invoice_no
 					doc.items = []
 
 					for idx, row in group_rows:
@@ -1242,6 +1244,7 @@ class EcommerceBillImport(Document):
 							if wh.ecom_warehouse_id == row.ship_from_fc), None)
 						if not wh:
 							raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
+						
 
 						doc.location = wh.location
 						doc.company_address = wh.erp_address
@@ -1257,7 +1260,6 @@ class EcommerceBillImport(Document):
 
 						if is_taxable:
 							doc.custom_ecommerce_invoice_id=invoice_no
-							doc.__newname=invoice_no
 							for tax_type, amount, acc_head in [
 								("CGST", flt(row.cgst_rate), "Output Tax CGST - KGOPL"),
 								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), "Output Tax SGST - KGOPL"),
@@ -1282,44 +1284,47 @@ class EcommerceBillImport(Document):
 
 				# Inter-company: Purchase Invoice or Receipt
 				if not existing_name_purchase:
-					pi_doc = frappe.new_doc("Purchase Invoice" if is_taxable else "Purchase Receipt")
-					pi_doc.supplier = ecommerce_mapping.inter_company_supplier
-					pi_doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
-					pi_doc.custom_invoice_no = invoice_no
-					pi_doc.customer = customer
+					if group_rows[0][1].get("transaction_type") !="FC_REMOVAL":
+						pi_doc = frappe.new_doc("Purchase Invoice" if is_taxable else "Purchase Receipt")
+						pi_doc.supplier = ecommerce_mapping.inter_company_supplier
+						pi_doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
+						pi_doc.custom_invoice_no = invoice_no
+						pi_doc.customer = customer
+						doc.__newname=invoice_no
+						if is_taxable:
+							pi_doc.bill_no=invoice_no
+						
 
-					for idx, row in group_rows:
-						item_code = next((e_item.erp_item for e_item in ecommerce_mapping.ecom_item_table
-							if e_item.ecom_item_id == row.get(ecommerce_mapping.ecom_sku_column_header)), None)
-						if not item_code:
-							raise Exception(f"Item mapping not found for SKU {row.sku}")
+						for idx, row in group_rows:
+							item_code = next((e_item.erp_item for e_item in ecommerce_mapping.ecom_item_table
+								if e_item.ecom_item_id == row.get(ecommerce_mapping.ecom_sku_column_header)), None)
+							if not item_code:
+								raise Exception(f"Item mapping not found for SKU {row.sku}")
 
-						wh = next((wh for wh in ecommerce_mapping.ecommerce_warehouse_mapping
-							if wh.ecom_warehouse_id == row.ship_to_fc), None)
+							wh = next((wh for wh in ecommerce_mapping.ecommerce_warehouse_mapping
+								if wh.ecom_warehouse_id == row.ship_to_fc), None)
+							if not wh:
+								raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
 
-						if not row.ship_to_fc or not wh:
-							warehouse = ecommerce_mapping.default_company_warehouse
-							location = ecommerce_mapping.default_company_location
-							com_address = ecommerce_mapping.default_company_address
-						else:
-							warehouse = wh.erp_warehouse
-							location = wh.location
-							com_address = wh.erp_address
+							if wh:
+								warehouse = wh.erp_warehouse
+								location = wh.location
+								com_address = wh.erp_address
 
-						pi_doc.location = location
-						pi_doc.company_address = com_address
-						if row.ship_to_state:
-							pi_doc.place_of_supply = state_code_dict.get(str(row.ship_to_state).lower())
+							pi_doc.location = location
+							pi_doc.company_address = com_address
+							if row.ship_to_state:
+								pi_doc.place_of_supply = state_code_dict.get(str(row.ship_to_state).lower())
 
-						pi_doc.append("items", {
-							"item_code": item_code,
-							"qty": flt(row.quantity),
-							"rate": flt(row.taxable_value),
-							"warehouse": warehouse
-						})
+							pi_doc.append("items", {
+								"item_code": item_code,
+								"qty": flt(row.quantity),
+								"rate": flt(row.taxable_value),
+								"warehouse": warehouse,
+							})
 
-					pi_doc.save(ignore_permissions=True)
-					pi_doc.submit()
+						pi_doc.save(ignore_permissions=True)
+						pi_doc.submit()
 
 			except Exception as e:
 				for idx, row in group_rows:
