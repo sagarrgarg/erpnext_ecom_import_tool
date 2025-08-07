@@ -1,0 +1,16 @@
+[
+ {
+  "accounts": [],
+  "credit_limits": [],
+  "customer_group_name": "Amazon B2b",
+  "default_price_list": null,
+  "docstatus": 0,
+  "doctype": "Customer Group",
+  "is_group": 0,
+  "modified": "2025-08-07 13:23:43.073514",
+  "name": "Amazon B2b",
+  "old_parent": "All Customer Groups",
+  "parent_customer_group": "All Customer Groups",
+  "payment_terms": null
+ }
+]

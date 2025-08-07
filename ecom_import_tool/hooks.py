@@ -14,6 +14,10 @@ fixtures = [
         "doctype": "Custom Field",
         "filters": [["module" , "in" , ("Ecom Import Tool")]]
     },
+    {
+        "doctype":"Customer Group",
+        "filters": [["name" , "in" , ("Amazon B2b")]]
+    },
     {"doctype":"Ecommerce Platform"}
 ]
 # required_apps = []

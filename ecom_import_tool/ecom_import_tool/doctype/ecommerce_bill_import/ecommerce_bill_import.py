@@ -552,40 +552,47 @@ class EcommerceBillImport(Document):
 			try:
 				shipment_items = [x for x in items_data if x[1].get("transaction_type") not in ["Refund","Cancel"]]
 				refund_items = [x for x in items_data if x[1].get("transaction_type") == "Refund"]
-				
+				status=None
 				customer = frappe.db.get_value("Customer", {"gstin": items_data[0][1].get("customer_bill_to_gstid")}, "name")
 				if not customer:
 					gst_details=get_gstin_info(items_data[0][1].get("customer_bill_to_gstid"))
-					cus = frappe.new_doc("Customer")
-					cus.gstin = items_data[0][1].get("customer_bill_to_gstid")
-					cus.customer_name = gst_details.get("business_name")
-					cus.gst_category=gst_details.get("gst_category")
-					cus.save(ignore_permissions=True)
-					customer = cus.name
-					if len(gst_details.get("all_addresses"))>0:
-						count=0
-						for add in gst_details.get("all_addresses"):
-							count+=1
-							address=frappe.new_doc("Address")
-							address.address_type="Billing"
-							address.title=str(gst_details.get("business_name"))+"-"+str(count)
-							address.address_line1=add.get("address_line1")
-							address.address_line2=add.get("address_line2")
-							address.city=add.get("city")
-							address.state=add.get("state")
-							address.country=add.get("country")
-							address.pincode=add.get("pincode")
-							address.is_primary_address=1
-							address.is_shipping_address=1
-							address.gstin=items_data[0][1].get("customer_bill_to_gstid")
-							address.append("links",{
-								"link_doctype":"Customer",
-								"link_name":customer
-							})
-							address.save(ignore_permissions=True)
+					status=gst_details.get("status")
+					if status=="Active":
+						cus = frappe.new_doc("Customer")
+						cus.gstin = items_data[0][1].get("customer_bill_to_gstid")
+						cus.customer_name = gst_details.get("business_name")
+						cus.gst_category=gst_details.get("gst_category")
+						cus.customer_group="Amazon B2b"
+						cus.save(ignore_permissions=True)
+						customer = cus.name
+						if len(gst_details.get("all_addresses"))>0:
+							count=0
+							for add in gst_details.get("all_addresses"):
+								count+=1
+								address=frappe.new_doc("Address")
+								address.address_type="Billing"
+								address.title=str(gst_details.get("business_name"))+"-"+str(count)
+								address.address_line1=add.get("address_line1")
+								address.address_line2=add.get("address_line2")
+								address.city=add.get("city")
+								address.state=add.get("state")
+								address.country=add.get("country")
+								address.pincode=add.get("pincode")
+								address.is_primary_address=1
+								address.is_shipping_address=1
+								address.gstin=items_data[0][1].get("customer_bill_to_gstid")
+								address.append("links",{
+									"link_doctype":"Customer",
+									"link_name":customer
+								})
+								address.save(ignore_permissions=True)
+					else:
+						customer=frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "default_non_company_customer")
+
 
 					
 					
+				
 				existing_si_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 0, "is_return": 0}, "name")
 				existing_si = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 1, "is_return": 0}, "name")
 
@@ -645,11 +652,15 @@ class EcommerceBillImport(Document):
 								si.company_address = com_address
 								si.ecommerce_gstin = ecommerce_gstin
 								hsn_code=frappe.db.get_value("Item",itemcode,"gst_hsn_code")
+								if status!="Active":
+									if child_row.ship_to_state:
+										state=child_row.ship_to_state
+										si.place_of_supply=state_code_dict.get(str(state.lower()))
 
 								si.append("items", {
 									"item_code": itemcode,
 									"qty": flt(child_row.quantity),
-									"rate": flt(child_row.tax_exclusive_gross),
+									"rate": flt(child_row.taxable_value)/flt(child_row.quantity),
 									"description": child_row.item_description,
 									"warehouse": warehouse,
 									"gst_hsn_code":hsn_code,
@@ -684,6 +695,12 @@ class EcommerceBillImport(Document):
 									"message": f"Shipment item error: {str(item_error)}"
 								})
 						if len(items_append)>0:
+							si.save(ignore_permissions=True)
+							for j in si.items:
+								j.item_tax_template = ""
+								j.item_tax_rate = frappe._dict()
+
+
 							si.save(ignore_permissions=True)
 						if invoice_no not in error_log:
 							si.submit()
@@ -756,6 +773,10 @@ class EcommerceBillImport(Document):
 									if gstin.ecommerce_operator_gstin == child_row.seller_gstin:
 										# ecommerce_gstin = gstin.ecommerce_operator_gstin
 										break
+								if status!="Active":
+									if child_row.ship_to_state:
+										state=child_row.ship_to_state
+										si.place_of_supply=state_code_dict.get(str(state.lower()))
 
 								if not si_return.location:
 									si_return.location = location
@@ -769,7 +790,7 @@ class EcommerceBillImport(Document):
 								si_return.append("items", {
 									"item_code": itemcode,
 									"qty": -flt(child_row.quantity),
-									"rate": flt(child_row.tax_exclusive_gross),
+									"rate": flt(child_row.taxable_value)/flt(child_row.quantity),
 									"description": child_row.item_description,
 									"gst_hsn_code":hsn_code,
 									"warehouse": warehouse,
@@ -804,6 +825,12 @@ class EcommerceBillImport(Document):
 									"error": f"Refund item error: {str(item_error)}"
 								})
 						if len(items_append)>0:
+							si_return.save(ignore_permissions=True)
+							for j in si_return.items:
+								j.item_tax_template = ""
+								j.item_tax_rate = frappe._dict()
+
+
 							si_return.save(ignore_permissions=True)
 
 						if invoice_no not in si_return_error:
@@ -959,7 +986,7 @@ class EcommerceBillImport(Document):
 								si.append("items", {
 									"item_code": itemcode,
 									"qty": flt(child_row.quantity),
-									"rate": flt(child_row.tax_exclusive_gross),
+									"rate": flt(child_row.taxable_value)/flt(child_row.quantity),
 									"description": child_row.item_description,
 									"warehouse": warehouse,
 									"gst_hsn_code":hsn_code,
@@ -997,6 +1024,12 @@ class EcommerceBillImport(Document):
 
 					try:
 						if len(items_append)>0:
+							si.save(ignore_permissions=True)
+							for j in si.items:
+								j.item_tax_template = ""
+								j.item_tax_rate = frappe._dict()
+
+
 							si.save(ignore_permissions=True)		
 							if invoice_no not in error_names:
 								si.submit()
@@ -1106,7 +1139,7 @@ class EcommerceBillImport(Document):
 							si_return.append("items", {
 								"item_code": itemcode,
 								"qty": -flt(child_row.quantity),
-								"rate": abs(flt(child_row.tax_exclusive_gross) ),
+								"rate": abs(flt(child_row.taxable_value) )/flt(child_row.quantity),
 								"description": child_row.item_description,
 								"warehouse": warehouse,
 								"gst_hsn_code":hsn_code,
@@ -1142,6 +1175,12 @@ class EcommerceBillImport(Document):
 							# frappe.log_error(f"Refund error in row {idx} for Invoice {invoice_no}: {item_error}", "Refund Error")
 
 					try:
+						si_return.save(ignore_permissions=True)
+						for j in si_return.items:
+							j.item_tax_template = ""
+							j.item_tax_rate = frappe._dict()
+
+
 						si_return.save(ignore_permissions=True)
 						if invoice_no not in si_error:
 							si_return.submit()
@@ -1280,6 +1319,12 @@ class EcommerceBillImport(Document):
 										})
 
 					doc.save(ignore_permissions=True)
+					for j in doc.items:
+						j.item_tax_template = ""
+						j.item_tax_rate = frappe._dict()
+
+
+					doc.save(ignore_permissions=True)
 					doc.submit()
 					success_count += len(group_rows)
 					frappe.msgprint(f"{doc.doctype} {doc.name} created for Invoice No {invoice_no}")
@@ -1326,6 +1371,12 @@ class EcommerceBillImport(Document):
 							})
 
 						pi_doc.save(ignore_permissions=True)
+						for j in pi_doc.items:
+							j.item_tax_template = ""
+							j.item_tax_rate = frappe._dict()
+
+
+						pi_doc.save(ignore_permissions=True)				
 						pi_doc.submit()
 
 			except Exception as e:
@@ -1418,17 +1469,16 @@ class EcommerceBillImport(Document):
 				ecommerce_gstin = get_gstin(i.seller_gstin)
 				item_name = frappe.db.get_value("Item", item_code, "item_name")
 				hsn_code=frappe.db.get_value("Item",item_code,"gst_hsn_code")
-
+				print("###################################",i.order_id,flt(i.price_before_discount)/flt(i.item_quantity))
 				item_row = {
 					"item_code": item_code,
 					"item_name": item_name,
 					"qty": flt(i.item_quantity),
-					"rate": flt(i.price_before_discount),
+					"rate": flt(i.taxable_value)/flt(i.item_quantity),
+					"price_list_rate":flt(i.taxable_value)/flt(i.item_quantity),
 					"gst_hsn_code": hsn_code,
 					"description": i.product_titledescription,
 					"warehouse": warehouse,
-					"margin_type": "Amount",
-					"margin_rate_or_amount": flt(i.total_discount),
 					"income_account": flipkart.income_account,
 					"custom_ecom_item_id": i.order_item_id
 				}
@@ -1474,6 +1524,13 @@ class EcommerceBillImport(Document):
 								})
 
 					si.save(ignore_permissions=True)
+					for j in si.items:
+						j.item_tax_template = ""
+						j.item_tax_rate = frappe._dict()
+
+					si.due_date = getdate(today())
+
+					si.save(ignore_permissions=True)				
 					si_invoice.append(si.name)
 
 			except Exception as e:
@@ -1555,11 +1612,10 @@ class EcommerceBillImport(Document):
 					"item_name": item_name,
 					"gst_hsn_code": hsn_code,
 					"qty": -flt(i.item_quantity),
-					"rate": flt(i.price_before_discount),
+					"rate": flt(i.taxable_value)/flt(i.item_quantity),
+					"price_list_rate":flt(i.taxable_value)/flt(i.item_quantity),
 					"description": i.product_titledescription,
 					"warehouse": warehouse,
-					"margin_type": "Amount",
-					"margin_rate_or_amount": flt(i.total_discount),
 					"custom_ecom_item_id": i.order_item_id
 				}
 
@@ -1603,6 +1659,13 @@ class EcommerceBillImport(Document):
 							})
 
 				si.save()
+				for j in si.items:
+					j.item_tax_template = ""
+					j.item_tax_rate = frappe._dict()
+
+				si.due_date = getdate(today())
+
+				si.save(ignore_permissions=True)				
 				return_invoice.append(si.name)
 			except Exception as e:
 				errors.append({
@@ -1724,9 +1787,8 @@ class EcommerceBillImport(Document):
 					"description": i.product_name,
 					"warehouse": warehouse,
 					"income_account": amazon.income_account,
+					"item_tax_template": ""
 				})
-
-				
 				# print("################^&&&&&&&",i.order_item_id,tax_amt)
 				tax_rate=flt(i.gst_rate_on_gmv)*100
 				tax_amt = flt(i.gmv)*(tax_rate/100)
@@ -1742,9 +1804,11 @@ class EcommerceBillImport(Document):
 			
 				si.save(ignore_permissions=True)
 				for j in si.items:
-					j.item_tax_template=None
-					j.rate=flt(i.net_gmv)
-				# si.due_date=getdate(today())
+					j.item_tax_template = ""
+					j.item_tax_rate = frappe._dict()
+
+				si.due_date = getdate(today())
+
 				si.save(ignore_permissions=True)
 				si_items.append(si.name)
 
@@ -1864,8 +1928,8 @@ class EcommerceBillImport(Document):
 				
 				si.save(ignore_permissions=True)
 				for j in si.items:
-					j.item_tax_template=None
-					j.rate=flt(i.net_gmv)
+					j.item_tax_template = ""
+					j.item_tax_rate = frappe._dict()
 				si.due_date=getdate(today())
 				si.save(ignore_permissions=True)
 				si_return_items.append(si.name)
@@ -2031,7 +2095,8 @@ class EcommerceBillImport(Document):
 
 					si.save(ignore_permissions=True)
 					for j in si.items:
-						j.item_tax_template=None
+						j.item_tax_template = ""
+						j.item_tax_rate = frappe._dict()
 						j.rate=flt(i.taxable_value)
 					si.due_date=getdate(today())
 					si.save(ignore_permissions=True)
@@ -2161,7 +2226,8 @@ class EcommerceBillImport(Document):
 
 				si.save(ignore_permissions=True)
 				for j in si.items:
-					j.item_tax_template=None
+					j.item_tax_template = ""
+					j.item_tax_rate = frappe._dict()
 					j.rate=flt(i.taxable_value)
 				si.due_date=getdate(today())
 				si.save(ignore_permissions=True)
