@@ -660,7 +660,7 @@ class EcommerceBillImport(Document):
 								si.append("items", {
 									"item_code": itemcode,
 									"qty": flt(child_row.quantity),
-									"rate": flt(child_row.taxable_value)/flt(child_row.quantity),
+									"rate": flt(child_row.tax_exclusive_gross)/flt(child_row.quantity),
 									"description": child_row.item_description,
 									"warehouse": warehouse,
 									"gst_hsn_code":hsn_code,
@@ -790,7 +790,7 @@ class EcommerceBillImport(Document):
 								si_return.append("items", {
 									"item_code": itemcode,
 									"qty": -flt(child_row.quantity),
-									"rate": flt(child_row.taxable_value)/flt(child_row.quantity),
+									"rate": flt(child_row.tax_exclusive_gross)/flt(child_row.quantity),
 									"description": child_row.item_description,
 									"gst_hsn_code":hsn_code,
 									"warehouse": warehouse,
@@ -986,7 +986,7 @@ class EcommerceBillImport(Document):
 								si.append("items", {
 									"item_code": itemcode,
 									"qty": flt(child_row.quantity),
-									"rate": flt(child_row.taxable_value)/flt(child_row.quantity),
+									"rate": flt(child_row.tax_exclusive_gross)/flt(child_row.quantity),
 									"description": child_row.item_description,
 									"warehouse": warehouse,
 									"gst_hsn_code":hsn_code,
@@ -1139,7 +1139,7 @@ class EcommerceBillImport(Document):
 							si_return.append("items", {
 								"item_code": itemcode,
 								"qty": -flt(child_row.quantity),
-								"rate": abs(flt(child_row.taxable_value) )/flt(child_row.quantity),
+								"rate": abs(flt(child_row.tax_exclusive_gross) )/flt(child_row.quantity),
 								"description": child_row.item_description,
 								"warehouse": warehouse,
 								"gst_hsn_code":hsn_code,
@@ -1506,10 +1506,10 @@ class EcommerceBillImport(Document):
 					si.append("items", item_row)
 					si.custom_ecommerce_invoice_id=i.buyer_invoice_id
 					si.__newname=i.buyer_invoice_id
-					for tax_type, amount, acc_head in [
-						("CGST", flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
-						("SGST", flt(i.sgst_amount), "Output Tax SGST - KGOPL"),
-						("IGST", flt(i.igst_amount), "Output Tax IGST - KGOPL")
+					for tax_type,rate, amount, acc_head in [
+						("CGST",flt(i.cgst_rate), flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
+						("SGST", flt(i.sgst_rate),flt(i.sgst_amount), "Output Tax SGST - KGOPL"),
+						("IGST", flt(i.igst_rate),flt(i.igst_amount), "Output Tax IGST - KGOPL")
 					]:
 						if amount:
 							existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
@@ -1518,6 +1518,7 @@ class EcommerceBillImport(Document):
 							else:
 								si.append("taxes", {
 									"charge_type": "On Net Total",
+									"rate":rate*100,
 									"account_head": acc_head,
 									"tax_amount": amount,
 									"description": tax_type
@@ -2076,10 +2077,10 @@ class EcommerceBillImport(Document):
 					si.location = location
 					si.append("items", item_row)
 
-					for tax_type, amount, acc_head in [
-						("CGST", flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
-						("SGST", flt(i.sgst_amount_or_utgst_as_applicable), "Output Tax SGST - KGOPL"),
-						("IGST", flt(i.igst_amount), "Output Tax IGST - KGOPL")
+					for tax_type, rate,amount, acc_head in [
+						("CGST", i.cgst_rate,flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
+						("SGST", i.sgst_rate_or_utgst_as_applicable,flt(i.sgst_amount_or_utgst_as_applicable), "Output Tax SGST - KGOPL"),
+						("IGST", i.igst_rate,flt(i.igst_amount), "Output Tax IGST - KGOPL")
 					]:
 						if amount:
 							existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
@@ -2088,6 +2089,7 @@ class EcommerceBillImport(Document):
 							else:
 								si.append("taxes", {
 									"charge_type": "On Net Total",
+									"rate":rate,
 									"account_head": acc_head,
 									"tax_amount": amount,
 									"description": tax_type
