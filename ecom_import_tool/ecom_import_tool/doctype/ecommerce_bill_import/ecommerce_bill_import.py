@@ -592,6 +592,9 @@ class EcommerceBillImport(Document):
 
 					
 					
+				if not customer:
+					customer=frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "default_non_company_customer")
+
 				
 				existing_si_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 0, "is_return": 0}, "name")
 				existing_si = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 1, "is_return": 0}, "name")
@@ -628,12 +631,16 @@ class EcommerceBillImport(Document):
 									raise Exception(f"Item mapping not found for SKU: {child_row.get(amazon.ecom_sku_column_header)}")
 								warehouse, location, com_address = None, None, None
 								for wh_map in amazon.ecommerce_warehouse_mapping:
+									print("##############################2345",child_row.warehouse_id)
 									if wh_map.ecom_warehouse_id == child_row.warehouse_id:
 										warehouse = wh_map.erp_warehouse
 										location = wh_map.location
 										com_address = wh_map.erp_address
+										 
 										break
+									
 								if not warehouse:
+									print("##############################AJ",warehouse)
 									error_names.append(invoice_no)
 									raise Exception(f"Warehouse Mapping not found")
 
@@ -671,22 +678,23 @@ class EcommerceBillImport(Document):
 
 								})
 								items_append.append(itemcode)
-								for tax_type, amount, acc_head in [
-								("CGST", flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
-								("SGST", flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
-								("IGST", flt(child_row.igst_tax), "Output Tax IGST - KGOPL")
-								]:
-									if amount>0:
-										existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-										if existing_tax:
-											existing_tax.tax_amount += amount
-										else:
-											si.append("taxes", {
-												"charge_type": "On Net Total",
-												"account_head": acc_head,
-												"tax_amount": amount,
-												"description": tax_type
-											})
+								for tax_type,rate, amount, acc_head in [
+									("CGST", flt(child_row.cgst_rate),flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
+									("SGST",flt(child_row.sgst_rate)+flt(child_row.utgst_rate), flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
+									("IGST", flt(child_row.igst_rate),flt(child_row.igst_tax) ,"Output Tax IGST - KGOPL")
+									]:
+										if amount>0:
+											existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
+											if existing_tax:
+												existing_tax.tax_amount += amount
+											else:
+												si.append("taxes", {
+													"charge_type": "On Net Total",
+													"account_head": acc_head,
+													"rate":rate*100,
+													"tax_amount": amount,
+													"description": tax_type
+												})
 							except Exception as item_error:
 								error_log.append(invoice_no)
 								errors.append({
@@ -767,6 +775,10 @@ class EcommerceBillImport(Document):
 										com_address = wh_map.erp_address
 										break
 
+								if not warehouse:
+									error_names.append(invoice_no)
+									raise Exception(f"Warehouse Mapping not found")
+
 								ecommerce_gstin = None
 								# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
 								for gstin in amazon.ecommerce_gstin_mapping:
@@ -800,29 +812,30 @@ class EcommerceBillImport(Document):
 									"income_account": amazon.income_account,
 
 								})
-								for tax_type, amount, acc_head in [
-								("CGST", flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
-								("SGST", flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
-								("IGST", flt(child_row.igst_tax), "Output Tax IGST - KGOPL")
-								]:
-									if amount>0:
-										existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-										if existing_tax:
-											existing_tax.tax_amount += amount
-										else:
-											si.append("taxes", {
-												"charge_type": "On Net Total",
-												"account_head": acc_head,
-												"tax_amount": amount,
-												"description": tax_type
-											})
+								for tax_type,rate, amount, acc_head in [
+									("CGST", flt(child_row.cgst_rate),flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
+									("SGST",flt(child_row.sgst_rate)+flt(child_row.utgst_rate), flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
+									("IGST", flt(child_row.igst_rate),flt(child_row.igst_tax) ,"Output Tax IGST - KGOPL")
+									]:
+										if amount>0:
+											existing_tax = next((t for t in si_return.taxes if t.account_head == acc_head), None)
+											if existing_tax:
+												existing_tax.tax_amount += amount
+											else:
+												si_return.append("taxes", {
+													"charge_type": "On Net Total",
+													"account_head": acc_head,
+													"rate":rate*100,
+													"tax_amount": amount,
+													"description": tax_type
+												})
 								items_append.append(invoice_no)
 							except Exception as item_error:
 								si_return_error.append(invoice_no)
 								errors.append({
-									"row_no": idx,
-									"invoice_no": invoice_no,
-									"error": f"Refund item error: {str(item_error)}"
+									"idx": idx,
+									"invoice_id": invoice_no,
+									"message": f"Refund item error: {str(item_error)}"
 								})
 						if len(items_append)>0:
 							si_return.save(ignore_permissions=True)
@@ -848,12 +861,12 @@ class EcommerceBillImport(Document):
 			except Exception as e:
 				for idx, _ in items_data:
 					errors.append({
-						"row_no": idx,
-						"invoice_no": invoice_no,
-						"error": f"Invoice processing error: {str(e)}"
+						"idx": idx,
+						"invoice_id": invoice_no,
+						"message": f"Invoice processing error: {str(e)}"
 					})
 				# frappe.log_error(f"Error in invoice group {invoice_no}: {e}", "Sales Invoice Processing Error")
-
+		print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$",errors)
 
 		if errors:
 			self.status = "Partial Success" if success_count else "Error"
@@ -997,22 +1010,23 @@ class EcommerceBillImport(Document):
 								})
 							
 								items_append.append(itemcode)
-								for tax_type, amount, acc_head in [
-								("CGST", flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
-								("SGST", flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
-								("IGST", flt(child_row.igst_tax), "Output Tax IGST - KGOPL")
-								]:
-									if amount>0:
-										existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-										if existing_tax:
-											existing_tax.tax_amount += amount
-										else:
-											si.append("taxes", {
-												"charge_type": "On Net Total",
-												"account_head": acc_head,
-												"tax_amount": amount,
-												"description": tax_type
-											})
+								for tax_type,rate, amount, acc_head in [
+									("CGST", flt(child_row.cgst_rate),flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
+									("SGST",flt(child_row.sgst_rate)+flt(child_row.utgst_rate), flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
+									("IGST", flt(child_row.igst_rate),flt(child_row.igst_tax) ,"Output Tax IGST - KGOPL")
+									]:
+										if amount>0:
+											existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
+											if existing_tax:
+												existing_tax.tax_amount += amount
+											else:
+												si.append("taxes", {
+													"charge_type": "On Net Total",
+													"account_head": acc_head,
+													"rate":rate*100,
+													"tax_amount": amount,
+													"description": tax_type
+												})
 						except Exception as item_error:
 							error_names.append(invoice_no)
 							errors.append({
@@ -1149,22 +1163,23 @@ class EcommerceBillImport(Document):
 								"margin_rate_or_amount": flt(child_row.item_promo_discount),
 								"custom_ecom_item_id": child_row.shipment_item_id
 							})
-							for tax_type, amount, acc_head in [
-								("CGST", flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
-								("SGST", flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
-								("IGST", flt(child_row.igst_tax), "Output Tax IGST - KGOPL")
-								]:
-									if amount>0:
-										existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-										if existing_tax:
-											existing_tax.tax_amount += amount
-										else:
-											si.append("taxes", {
-												"charge_type": "On Net Total",
-												"account_head": acc_head,
-												"tax_amount": amount,
-												"description": tax_type
-											})
+							for tax_type,rate, amount, acc_head in [
+									("CGST", flt(child_row.cgst_rate),flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
+									("SGST",flt(child_row.sgst_rate)+flt(child_row.utgst_rate), flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
+									("IGST", flt(child_row.igst_rate),flt(child_row.igst_tax) ,"Output Tax IGST - KGOPL")
+									]:
+										if amount>0:
+											existing_tax = next((t for t in si_return.taxes if t.account_head == acc_head), None)
+											if existing_tax:
+												existing_tax.tax_amount += amount
+											else:
+												si_return.append("taxes", {
+													"charge_type": "On Net Total",
+													"account_head": acc_head,
+													"rate":rate*100,
+													"tax_amount": amount,
+													"description": tax_type
+												})
 						except Exception as item_error:
 							si_error.append(invoice_no)
 							errors.append({
@@ -1301,22 +1316,23 @@ class EcommerceBillImport(Document):
 
 						if is_taxable:
 							doc.custom_ecommerce_invoice_id=invoice_no
-							for tax_type, amount, acc_head in [
-								("CGST", flt(row.cgst_rate), "Output Tax CGST - KGOPL"),
-								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), "Output Tax SGST - KGOPL"),
-								("IGST", flt(row.igst_rate), "Output Tax IGST - KGOPL")
-							]:
-								if amount > 0:
-									existing_tax = next((t for t in doc.taxes if t.account_head == acc_head), None)
-									if existing_tax:
-										existing_tax.tax_amount += amount
-									else:
-										doc.append("taxes", {
-											"charge_type": "On Net Total",
-											"account_head": acc_head,
-											"tax_amount": amount,
-											"description": tax_type
-										})
+							for tax_type,rate, amount, acc_head in [
+									("CGST", flt(row.cgst_rate),flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
+									("SGST",flt(row.sgst_rate)+flt(row.utgst_rate), flt(row.sgst_amount)+flt(row.utgst_amount), "Output Tax SGST - KGOPL"),
+									("IGST", flt(row.igst_rate),flt(row.igst_amount) ,"Output Tax IGST - KGOPL")
+									]:
+										if amount>0:
+											existing_tax = next((t for t in doc.taxes if t.account_head == acc_head), None)
+											if existing_tax:
+												existing_tax.tax_amount += amount
+											else:
+												doc.append("taxes", {
+													"charge_type": "On Net Total",
+													"account_head": acc_head,
+													"rate":rate*100,
+													"tax_amount": amount,
+													"description": tax_type
+												})
 
 					doc.save(ignore_permissions=True)
 					for j in doc.items:
@@ -1369,6 +1385,25 @@ class EcommerceBillImport(Document):
 								"rate": flt(row.taxable_value),
 								"warehouse": warehouse,
 							})
+							if is_taxable:
+								for tax_type,rate, amount, acc_head in [
+									("CGST", flt(row.cgst_rate),flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
+									("SGST",flt(row.sgst_rate)+flt(row.utgst_rate), flt(row.sgst_amount)+flt(row.utgst_amount), "Output Tax SGST - KGOPL"),
+									("IGST", flt(row.igst_rate),flt(row.igst_amount) ,"Output Tax IGST - KGOPL")
+									]:
+										if amount>0:
+											existing_tax = next((t for t in pi_doc.taxes if t.account_head == acc_head), None)
+											if existing_tax:
+												existing_tax.tax_amount += amount
+											else:
+												pi_doc.append("taxes", {
+													"charge_type": "On Net Total",
+													"account_head": acc_head,
+													"rate":rate*100,
+													"tax_amount": amount,
+													"description": tax_type
+												})
+
 
 						pi_doc.save(ignore_permissions=True)
 						for j in pi_doc.items:
@@ -1642,22 +1677,23 @@ class EcommerceBillImport(Document):
 				# 	si.customer_address=customer_address_in_state
 				# elif flt(i.igst_amount):
 				# 	si.customer_address=customer_address_out_state
-				for tax_type, amount, acc_head in [
-					("CGST", flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
-					("SGST", flt(i.sgst_amount), "Output Tax SGST - KGOPL"),
-					("IGST", flt(i.igst_amount), "Output Tax IGST - KGOPL")
-				]:
-					if amount:
-						existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-						if existing_tax:
-							existing_tax.tax_amount += amount
-						else:
-							si.append("taxes", {
-								"charge_type": "On Net Total",
-								"account_head": acc_head,
-								"tax_amount": amount,
-								"description": tax_type
-							})
+				for tax_type,rate, amount, acc_head in [
+						("CGST",flt(i.cgst_rate), flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
+						("SGST", flt(i.sgst_rate),flt(i.sgst_amount), "Output Tax SGST - KGOPL"),
+						("IGST", flt(i.igst_rate),flt(i.igst_amount), "Output Tax IGST - KGOPL")
+					]:
+						if amount:
+							existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
+							if existing_tax:
+								existing_tax.tax_amount += amount
+							else:
+								si.append("taxes", {
+									"charge_type": "On Net Total",
+									"rate":rate*100,
+									"account_head": acc_head,
+									"tax_amount": amount,
+									"description": tax_type
+								})
 
 				si.save()
 				for j in si.items:
@@ -1914,18 +1950,18 @@ class EcommerceBillImport(Document):
 					"income_account": amazon.income_account
 				})
 
-				if i.customer_state == i.warehouse_state:
-					if flt(tax_amt) > 0:
-						# si.customer_address=customer_address_in_state
-
-						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax CGST - KGOPL", "tax_amount": flt(tax_amt) / 2, "description": "CGST"})
-						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax SGST - KGOPL", "tax_amount": flt(tax_amt) / 2, "description": "SGST"})
+				tax_rate=flt(i.gst_rate_on_gmv)*100
+				tax_amt = flt(i.gmv)*(tax_rate/100)
+				if i.source_address_state == i.destination_address_state:
+					if tax_amt > 0:
+						si.customer_address=customer_address_in_state
+						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax CGST - KGOPL","tax_amount": flt(tax_amt) / 2,"rate":tax_rate/2, "description": "CGST"})
+						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax SGST - KGOPL","tax_amount": flt(tax_amt) / 2,"rate":tax_rate/2,"description": "SGST"})
 				else:
-					if flt(tax_amt) > 0:
-						# si.customer_address=customer_address_out_state
-
-						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax IGST - KGOPL", "tax_amount": flt(tax_amt), "description": "IGST"})
-
+					if tax_amt > 0:
+						si.customer_address=customer_address_out_state
+						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax IGST - KGOPL","tax_amount": flt(tax_amt),"rate":tax_rate,"description": "IGST"})
+			
 				
 				si.save(ignore_permissions=True)
 				for j in si.items:
@@ -2209,22 +2245,23 @@ class EcommerceBillImport(Document):
 				if i.customers_billing_state:
 					state=i.customers_billing_state
 					si.place_of_supply=state_code_dict.get(str(state.lower()))
-				for tax_type, amount, acc_head in [
-					("CGST", flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
-					("SGST", flt(i.sgst_amount_or_utgst_as_applicable), "Output Tax SGST - KGOPL"),
-					("IGST", flt(i.igst_amount), "Output Tax IGST - KGOPL")
-				]:
-					if amount:
-						existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-						if existing_tax:
-							existing_tax.tax_amount += amount
-						else:
-							si.append("taxes", {
-								"charge_type": "On Net Total",
-								"account_head": acc_head,
-								"tax_amount": amount,
-								"description": tax_type
-							})
+				for tax_type, rate,amount, acc_head in [
+						("CGST", i.cgst_rate,flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
+						("SGST", i.sgst_rate_or_utgst_as_applicable,flt(i.sgst_amount_or_utgst_as_applicable), "Output Tax SGST - KGOPL"),
+						("IGST", i.igst_rate,flt(i.igst_amount), "Output Tax IGST - KGOPL")
+					]:
+						if amount:
+							existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
+							if existing_tax:
+								existing_tax.tax_amount += amount
+							else:
+								si.append("taxes", {
+									"charge_type": "On Net Total",
+									"rate":rate,
+									"account_head": acc_head,
+									"tax_amount": amount,
+									"description": tax_type
+								})
 
 				si.save(ignore_permissions=True)
 				for j in si.items:
