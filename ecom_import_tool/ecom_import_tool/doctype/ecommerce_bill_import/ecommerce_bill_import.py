@@ -620,6 +620,8 @@ class EcommerceBillImport(Document):
 							si.custom_inv_no = invoice_no
 							si.custom_ecommerce_invoice_id=invoice_no
 							si.__newname=invoice_no
+							si.custom_ecommerce_operator=self.ecommerce_mapping
+							si.custom_ecommerce_type=self.amazon_type
 							si.taxes = []
 							si.update_stock = 1
 						items_append=[]
@@ -753,6 +755,8 @@ class EcommerceBillImport(Document):
 						si_return = frappe.new_doc("Sales Invoice")
 						si_return.is_return = 1
 						si_return.return_against = existing_si
+						si_return.custom_ecommerce_operator=self.ecommerce_mapping
+						si_return.custom_ecommerce_type=self.amazon_type
 						si_return.customer = customer
 						si_return.posting_date = getdate(today())
 						si_return.custom_inv_no = child_row.credit_note_no
@@ -936,6 +940,8 @@ class EcommerceBillImport(Document):
 						si.custom_inv_no = invoice_no
 						si.custom_ecommerce_invoice_id=invoice_no
 						si.__newname=invoice_no
+						si.custom_ecommerce_operator=self.ecommerce_mapping
+						si.custom_ecommerce_type=self.amazon_type
 						si.taxes_and_charges = ""
 						
 						# si.taxes = []
@@ -1092,6 +1098,8 @@ class EcommerceBillImport(Document):
 					si_return.return_against = existing_si
 					si_return.customer = val
 					si_return.posting_date = getdate(today())
+					si_return.custom_ecommerce_operator=self.ecommerce_mapping
+					si_return.custom_ecommerce_type=self.amazon_type
 					si_return.custom_inv_no = invoice_no
 					si.custom_ecommerce_invoice_id=child_row.credit_note_no
 					si.__newname= child_row.credit_note_no
@@ -1284,6 +1292,8 @@ class EcommerceBillImport(Document):
 					doc.customer = customer
 					doc.posting_date = getdate(group_rows[0][1].get("invoice_date")) if is_taxable else getdate(today())
 					doc.custom_inv_no = invoice_no if is_taxable else None
+					doc.custom_ecommerce_operator=self.ecommerce_mapping
+					doc.custom_ecommerce_type=self.amazon_type
 					doc.taxes = [] if is_taxable else None
 					doc.update_stock = 1 if is_taxable else None
 					doc.set_warehouse = "" if not is_taxable else None
@@ -1353,6 +1363,8 @@ class EcommerceBillImport(Document):
 						pi_doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
 						pi_doc.custom_invoice_no = invoice_no
 						pi_doc.customer = customer
+						pi_doc.custom_ecommerce_operator=self.ecommerce_mapping
+						pi_doc.custom_ecommerce_type=self.amazon_type
 						doc.__newname=invoice_no
 						if is_taxable:
 							pi_doc.bill_no=invoice_no
@@ -1526,6 +1538,8 @@ class EcommerceBillImport(Document):
 					si.set_posting_time = 1
 					si.posting_date = getdate(i.buyer_invoice_date)
 					si.custom_inv_no = i.order_id
+					si.custom_ecommerce_operator=self.ecommerce_mapping
+					si.custom_ecommerce_type=self.amazon_type
 					si.taxes_and_charges = ""
 					si.update_stock = 1
 					if i.customers_billing_state:
@@ -1660,6 +1674,8 @@ class EcommerceBillImport(Document):
 				si.set_posting_time = 1
 				si.posting_date = getdate(i.buyer_invoice_date)
 				si.custom_inv_no = i.order_id
+				si.custom_ecommerce_operator=self.ecommerce_mapping
+				si.custom_ecommerce_type=self.amazon_type
 				si.taxes_and_charges = ""
 				si.update_stock = 1
 				si.company_address = company_address
@@ -1806,6 +1822,8 @@ class EcommerceBillImport(Document):
 					state=i.destination_address_state
 					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				si.taxes_and_charges = ""
+				si.custom_ecommerce_operator=self.ecommerce_mapping
+				si.custom_ecommerce_type=self.amazon_type
 				si.taxes = []
 				si.update_stock = 1
 				si.location = location
@@ -1927,6 +1945,8 @@ class EcommerceBillImport(Document):
 					state=i.destination_address_state
 					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				si.posting_date = getdate(i.refund_date_time)
+				si.custom_ecommerce_operator=self.ecommerce_mapping
+				si.custom_ecommerce_type=self.amazon_type
 				si.custom_inv_no = i.cred_order_item_id
 				si.taxes_and_charges = ""
 				si.taxes = []
@@ -2100,6 +2120,8 @@ class EcommerceBillImport(Document):
 					si.set_posting_time = 1
 					si.posting_date = getdate(i.buyer_invoice_date)
 					si.custom_inv_no = i.original_invoice_id
+					si.custom_ecommerce_operator=self.ecommerce_mapping
+					si.custom_ecommerce_type=self.amazon_type
 					if i.customers_billing_state:
 						state=i.customers_billing_state
 						si.place_of_supply=state_code_dict.get(str(state.lower()))
@@ -2232,6 +2254,8 @@ class EcommerceBillImport(Document):
 				si.set_posting_time = 1
 				si.posting_date = getdate(i.buyer_invoice_date)
 				si.custom_inv_no = i.original_invoice_id
+				si.custom_ecommerce_operator=self.ecommerce_mapping
+				si.custom_ecommerce_type=self.amazon_type
 				si.taxes_and_charges = ""
 				si.update_stock = 1
 				si.company_address = company_address
