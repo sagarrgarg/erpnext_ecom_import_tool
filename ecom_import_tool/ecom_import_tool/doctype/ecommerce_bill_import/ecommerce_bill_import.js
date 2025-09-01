@@ -198,3 +198,12 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 		$(frm.fields_dict.import_log_preview.wrapper).html(html);
 	}
 });
+
+
+frappe.realtime.on("data_import_progress", (data) => {
+    frappe.show_progress("Invoice Creation", data.progress, 100, data.message);
+
+    if (data.progress === 100) {
+        frappe.hide_progress();
+    }
+});

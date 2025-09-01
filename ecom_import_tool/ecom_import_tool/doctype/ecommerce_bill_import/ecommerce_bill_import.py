@@ -83,6 +83,20 @@ class EcommerceBillImport(Document):
 
 	@frappe.whitelist()
 	def create_invoice(self):
+		job = frappe.enqueue(
+		self.invoice_creation,
+		queue='long',
+		timeout=10000
+		)
+
+		return job.id
+
+
+
+
+
+
+	def invoice_creation(self):
 		frappe.msgprint("Data Import Started")
 		if self.ecommerce_mapping=="Amazon":
 			if self.amazon_type=="MTR B2B":
@@ -535,28 +549,42 @@ class EcommerceBillImport(Document):
 
 	@frappe.whitelist()
 	def create_sales_invoice_mtr_b2b(self):
-		error_names=[]
-		from frappe.utils import today, getdate
+		from frappe.utils import today, getdate, flt
+		import json
 
+		error_names=[]
 		errors = []
 		success_count = 0
 		invoice_groups = {}
 
+		# Group rows by Invoice
 		for idx, child_row in enumerate(self.mtr_b2b, 1):
 			invoice_no = child_row.invoice_number
 			if invoice_no not in invoice_groups:
 				invoice_groups[invoice_no] = []
 			invoice_groups[invoice_no].append((idx, child_row))
 
-		for invoice_no, items_data in invoice_groups.items():
+		total_invoices = len(invoice_groups) or 1  # avoid div-by-zero
+
+		# 🔹 Initial realtime update
+		frappe.publish_realtime(
+			"data_import_progress",
+			{"progress": 0, "message": f"Starting Amazon B2B import (0/{total_invoices})"},
+			user=frappe.session.user
+		)
+
+		# Process each invoice group
+		for count, (invoice_no, items_data) in enumerate(invoice_groups.items(), start=1):
 			try:
 				shipment_items = [x for x in items_data if x[1].get("transaction_type") not in ["Refund","Cancel"]]
 				refund_items = [x for x in items_data if x[1].get("transaction_type") == "Refund"]
 				status=None
+				gst_details={}
 				customer = frappe.db.get_value("Customer", {"gstin": items_data[0][1].get("customer_bill_to_gstid")}, "name")
 				if not customer:
-					gst_details=get_gstin_info(items_data[0][1].get("customer_bill_to_gstid"))
-					status=gst_details.get("status")
+					if len(items_data[0][1].get("customer_bill_to_gstid"))==15:
+						gst_details=get_gstin_info(items_data[0][1].get("customer_bill_to_gstid"))
+						status=gst_details.get("status")
 					if status=="Active":
 						cus = frappe.new_doc("Customer")
 						cus.gstin = items_data[0][1].get("customer_bill_to_gstid")
@@ -566,12 +594,12 @@ class EcommerceBillImport(Document):
 						cus.save(ignore_permissions=True)
 						customer = cus.name
 						if len(gst_details.get("all_addresses"))>0:
-							count=0
+							count_addr=0
 							for add in gst_details.get("all_addresses"):
-								count+=1
+								count_addr+=1
 								address=frappe.new_doc("Address")
 								address.address_type="Billing"
-								address.title=str(gst_details.get("business_name"))+"-"+str(count)
+								address.title=str(gst_details.get("business_name"))+"-"+str(count_addr)
 								address.address_line1=add.get("address_line1")
 								address.address_line2=add.get("address_line2")
 								address.city=add.get("city")
@@ -589,13 +617,9 @@ class EcommerceBillImport(Document):
 					else:
 						customer=frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "default_non_company_customer")
 
-
-					
-					
 				if not customer:
 					customer=frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "default_non_company_customer")
 
-				
 				existing_si_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 0, "is_return": 0}, "name")
 				existing_si = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 1, "is_return": 0}, "name")
 
@@ -609,6 +633,13 @@ class EcommerceBillImport(Document):
 						WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
 						""", child_row.shipment_item_id)
 					if exists_in_item:
+						# 🔹 Per-invoice group progress update before continue
+						percent = int((count / total_invoices) * 100)
+						frappe.publish_realtime(
+							"data_import_progress",
+							{"progress": percent, "message": f"Processed {count}/{total_invoices} invoices"},
+							user=frappe.session.user
+						)
 						continue
 					try:
 						if existing_si_draft:
@@ -638,16 +669,14 @@ class EcommerceBillImport(Document):
 										warehouse = wh_map.erp_warehouse
 										location = wh_map.location
 										com_address = wh_map.erp_address
-										 
 										break
-									
+								
 								if not warehouse:
 									print("##############################AJ",warehouse)
 									error_names.append(invoice_no)
 									raise Exception(f"Warehouse Mapping not found")
 
 								ecommerce_gstin = None
-								# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
 								for gstin in amazon.ecommerce_gstin_mapping:
 									if gstin.ecommerce_operator_gstin == child_row.seller_gstin:
 										# ecommerce_gstin = gstin.ecommerce_operator_gstin
@@ -677,7 +706,6 @@ class EcommerceBillImport(Document):
 									"margin_type": "Amount" if flt(child_row.item_promo_discount) > 0 else None,
 									"margin_rate_or_amount": flt(child_row.item_promo_discount),
 									"income_account": amazon.income_account
-
 								})
 								items_append.append(itemcode)
 								for tax_type,rate, amount, acc_head in [
@@ -709,8 +737,6 @@ class EcommerceBillImport(Document):
 							for j in si.items:
 								j.item_tax_template = ""
 								j.item_tax_rate = frappe._dict()
-
-
 							si.save(ignore_permissions=True)
 						if invoice_no not in error_log:
 							si.submit()
@@ -718,7 +744,6 @@ class EcommerceBillImport(Document):
 							success_count += len(shipment_items)
 						
 					except Exception as ship_err:
-						# frappe.log_error(f"Shipment processing error for {invoice_no}: {str(ship_err)}", "Shipment Error")
 						for idx, _ in shipment_items:
 							errors.append({
 								"idx": idx,
@@ -726,12 +751,12 @@ class EcommerceBillImport(Document):
 								"message": f"Shipment processing error: {str(ship_err)}"
 							})
 
-
 				if refund_items and existing_si_draft and not existing_si:
 					draft_si = frappe.get_doc("Sales Invoice", existing_si_draft)
 					if draft_si.custom_inv_no not in error_log:
 						draft_si.submit()
 						existing_si = draft_si.name
+
 				si_return_error=[]
 				if refund_items:
 					exists_in_item = frappe.db.sql("""
@@ -740,17 +765,22 @@ class EcommerceBillImport(Document):
 						WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 1
 						""", child_row.shipment_item_id)
 					if exists_in_item:
+						# 🔹 Per-invoice group progress update before continue
+						percent = int((count / total_invoices) * 100)
+						frappe.publish_realtime(
+							"data_import_progress",
+							{"progress": percent, "message": f"Processed {count}/{total_invoices} invoices"},
+							user=frappe.session.user
+						)
 						continue
 					try:
 						if not existing_si:
 							si_return_error.append(invoice_no)
-
 							errors.append({
 								"idx": refund_items[0][0],
 								"invoice_id": invoice_no,
 								"message": f"Refund requested but original submitted invoice not found for {invoice_no}."
 							})
-							
 
 						si_return = frappe.new_doc("Sales Invoice")
 						si_return.is_return = 1
@@ -761,7 +791,6 @@ class EcommerceBillImport(Document):
 						si_return.posting_date = getdate(today())
 						si_return.custom_inv_no = child_row.credit_note_no
 						si_return.custom_ecommerce_invoice_id=child_row.credit_note_no
-						
 						si_return.custom_inv_no = invoice_no
 						si_return.update_stock = 1
 						items_append=[]
@@ -784,7 +813,6 @@ class EcommerceBillImport(Document):
 									raise Exception(f"Warehouse Mapping not found")
 
 								ecommerce_gstin = None
-								# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
 								for gstin in amazon.ecommerce_gstin_mapping:
 									if gstin.ecommerce_operator_gstin == child_row.seller_gstin:
 										# ecommerce_gstin = gstin.ecommerce_operator_gstin
@@ -814,7 +842,6 @@ class EcommerceBillImport(Document):
 									"margin_type": "Amount" if flt(child_row.item_promo_discount) > 0 else None,
 									"margin_rate_or_amount": flt(child_row.item_promo_discount),
 									"income_account": amazon.income_account,
-
 								})
 								for tax_type,rate, amount, acc_head in [
 									("CGST", flt(child_row.cgst_rate),flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
@@ -846,15 +873,12 @@ class EcommerceBillImport(Document):
 							for j in si_return.items:
 								j.item_tax_template = ""
 								j.item_tax_rate = frappe._dict()
-
-
 							si_return.save(ignore_permissions=True)
 
 						if invoice_no not in si_return_error:
 							si_return.submit()
 							success_count += len(refund_items)
 					except Exception as refund_err:
-						# frappe.log_error(f"Refund processing error for {invoice_no}: {str(refund_err)}", "Refund Error")
 						for idx, _ in refund_items:
 							errors.append({
 								"idx": idx,
@@ -869,9 +893,16 @@ class EcommerceBillImport(Document):
 						"invoice_id": invoice_no,
 						"message": f"Invoice processing error: {str(e)}"
 					})
-				# frappe.log_error(f"Error in invoice group {invoice_no}: {e}", "Sales Invoice Processing Error")
-		print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$",errors)
 
+			# 🔹 Realtime progress update after each invoice group
+			percent = int((count / total_invoices) * 100)
+			frappe.publish_realtime(
+				"data_import_progress",
+				{"progress": percent, "message": f"Processed {count}/{total_invoices} invoices"},
+				user=frappe.session.user
+			)
+
+		# -------- Final Summary --------
 		if errors:
 			self.status = "Partial Success" if success_count else "Error"
 			indicator = "orange" if success_count else "red"
@@ -883,46 +914,43 @@ class EcommerceBillImport(Document):
 
 		self.error_json = str(json.dumps(errors))
 		self.save()
+
+		# 🔹 Final realtime update
+		frappe.publish_realtime(
+			"data_import_progress",
+			{"progress": 100, "message": "Amazon B2B Import Completed ✅"},
+			user=frappe.session.user
+		)
+
 		return success_count
 
 	
 	
 	@frappe.whitelist()
 	def create_sales_invoice_mtr_b2c(self):
-		from frappe.utils import today, getdate, flt
+		val = frappe.db.get_value(
+			"Ecommerce Mapping",
+			{"platform": "Amazon"},
+			"default_non_company_customer"
+		)
 
-		val = frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "default_non_company_customer")
-		errors = []
+		errors, error_names = [], []
 		success_count = 0
 		invoice_groups = {}
-		error_names=[]
+
+		# -------- Group Rows by Invoice --------
 		for idx, child_row in enumerate(self.mtr_b2c, 1):
 			invoice_no = child_row.invoice_number
 			if invoice_no not in invoice_groups:
 				invoice_groups[invoice_no] = []
 			invoice_groups[invoice_no].append((idx, child_row))
 
-		for invoice_no, items_data in invoice_groups.items():
-			if items_data[0][1].get("transaction_type") == "Refund":
+		total_invoices = len(invoice_groups)
 
-				exists_in_item = frappe.db.sql("""
-						SELECT sii.name FROM `tabSales Invoice Item` sii
-						JOIN `tabSales Invoice` si ON sii.parent = si.name
-						WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
-					""", items_data[0][1].get("shipment_item_id"))
-				if exists_in_item:
-					continue
-			if items_data[0][1].get("transaction_type") == "Shipment":
-				exists_in_item = frappe.db.sql("""
-						SELECT sii.name FROM `tabSales Invoice Item` sii
-						JOIN `tabSales Invoice` si ON sii.parent = si.name
-						WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
-					""", items_data[0][1].get("shipment_item_id"))
-				if exists_in_item:
-					continue
-
+		# -------- Process Each Invoice Group --------
+		for count, (invoice_no, items_data) in enumerate(invoice_groups.items(), start=1):
 			try:
-				shipment_items = [x for x in items_data if x[1].get("transaction_type") not in ["Refund","Cancel"]]
+				shipment_items = [x for x in items_data if x[1].get("transaction_type") not in ["Refund", "Cancel"]]
 				refund_items = [x for x in items_data if x[1].get("transaction_type") == "Refund"]
 
 				existing_si_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 0}, "name")
@@ -938,101 +966,95 @@ class EcommerceBillImport(Document):
 						si.customer = val
 						si.posting_date = getdate(today())
 						si.custom_inv_no = invoice_no
-						si.custom_ecommerce_invoice_id=invoice_no
-						si.__newname=invoice_no
-						si.custom_ecommerce_operator=self.ecommerce_mapping
-						si.custom_ecommerce_type=self.amazon_type
+						si.custom_ecommerce_invoice_id = invoice_no
+						si.__newname = invoice_no
+						si.custom_ecommerce_operator = self.ecommerce_mapping
+						si.custom_ecommerce_type = self.amazon_type
 						si.taxes_and_charges = ""
-						
-						# si.taxes = []
 						si.update_stock = 1
 
-
-					items_append=[]
+					items_append = []
 					for idx, child_row in shipment_items:
-						exists_in_item = frappe.db.sql("""
-						SELECT sii.name FROM `tabSales Invoice Item` sii
-						JOIN `tabSales Invoice` si ON sii.parent = si.name
-						WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
-						""", child_row.shipment_item_id)
-						if exists_in_item:
-							continue
 						try:
-							itemcode = next((i.erp_item for i in amazon.ecom_item_table if i.ecom_item_id == child_row.get(amazon.ecom_sku_column_header)), None)
+							exists_in_item = frappe.db.sql("""
+								SELECT sii.name FROM `tabSales Invoice Item` sii
+								JOIN `tabSales Invoice` si ON sii.parent = si.name
+								WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
+							""", child_row.shipment_item_id)
+							if exists_in_item:
+								continue
+
+							itemcode = next(
+								(i.erp_item for i in amazon.ecom_item_table if i.ecom_item_id == child_row.get(amazon.ecom_sku_column_header)),
+								None
+							)
 							if not itemcode:
 								error_names.append(invoice_no)
 								raise Exception(f"Item mapping not found for SKU: {child_row.get(amazon.ecom_sku_column_header)}")
 
-							warehouse, location, com_address,customer_address_in_state,customer_address_out_state= None, None, None,None,None
+							# ---- Warehouse mapping ----
+							warehouse, location, com_address = None, None, None
 							for wh_map in amazon.ecommerce_warehouse_mapping:
 								if wh_map.ecom_warehouse_id == child_row.warehouse_id:
 									warehouse = wh_map.erp_warehouse
 									location = wh_map.location
 									com_address = wh_map.erp_address
-									# customer_address_in_state=wh_map.customer_address_in_state
-									# customer_address_out_state=wh_map.customer_address_out_state
-
 									break
 							if not warehouse:
-								warehouse=amazon.default_company_warehouse
-								location=amazon.default_company_location
-								com_address=amazon.default_company_address
-								# customer_address_in_state=amazon.customer_address_in_state
-								# customer_address_out_state=amazon.customer_address_out_state
+								warehouse = amazon.default_company_warehouse
+								location = amazon.default_company_location
+								com_address = amazon.default_company_address
 
-							# if flt(child_row.cgst_tax)>0:
-							# 	si.customer_address=customer_address_in_state
-							# elif flt(child_row.igst_tax):
-							# 	si.customer_address=customer_address_out_state
-							# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
-							ecommerce_gstin=None
+							# ---- GSTIN Mapping ----
+							ecommerce_gstin = None
 							for gstin in amazon.ecommerce_gstin_mapping:
 								if gstin.ecommerce_operator_gstin == child_row.seller_gstin:
 									ecommerce_gstin = gstin.ecommerce_operator_gstin
-							print("##################gstin",ecommerce_gstin)
+
 							if not si.location:
 								si.location = location
 							if not si.set_warehouse:
 								si.set_warehouse = warehouse
-
 							si.company_address = com_address
 							if child_row.ship_to_state:
-								state=child_row.ship_to_state
-								si.place_of_supply=state_code_dict.get(str(state.lower()))
+								state = child_row.ship_to_state
+								si.place_of_supply = state_code_dict.get(str(state.lower()))
 							si.ecommerce_gstin = ecommerce_gstin
-							hsn_code=frappe.db.get_value("Item",itemcode,"gst_hsn_code")
-							if itemcode:
-								si.append("items", {
-									"item_code": itemcode,
-									"qty": flt(child_row.quantity),
-									"rate": flt(child_row.tax_exclusive_gross)/flt(child_row.quantity),
-									"description": child_row.item_description,
-									"warehouse": warehouse,
-									"gst_hsn_code":hsn_code,
-									"tax_rate": flt(child_row.total_tax_amount),
-									"margin_type": "Amount" if flt(child_row.item_promo_discount) > 0 else None,
-									"margin_rate_or_amount": flt(child_row.item_promo_discount),
-									"income_account": amazon.income_account,
-								})
-							
-								items_append.append(itemcode)
-								for tax_type,rate, amount, acc_head in [
-									("CGST", flt(child_row.cgst_rate),flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
-									("SGST",flt(child_row.sgst_rate)+flt(child_row.utgst_rate), flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
-									("IGST", flt(child_row.igst_rate),flt(child_row.igst_tax) ,"Output Tax IGST - KGOPL")
-									]:
-										if amount>0:
-											existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-											if existing_tax:
-												existing_tax.tax_amount += amount
-											else:
-												si.append("taxes", {
-													"charge_type": "On Net Total",
-													"account_head": acc_head,
-													"rate":rate*100,
-													"tax_amount": amount,
-													"description": tax_type
-												})
+
+							# ---- Append Item ----
+							hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
+							si.append("items", {
+								"item_code": itemcode,
+								"qty": flt(child_row.quantity),
+								"rate": flt(child_row.tax_exclusive_gross) / flt(child_row.quantity),
+								"description": child_row.item_description,
+								"warehouse": warehouse,
+								"gst_hsn_code": hsn_code,
+								"tax_rate": flt(child_row.total_tax_amount),
+								"margin_type": "Amount" if flt(child_row.item_promo_discount) > 0 else None,
+								"margin_rate_or_amount": flt(child_row.item_promo_discount),
+								"income_account": amazon.income_account,
+							})
+							items_append.append(itemcode)
+
+							# ---- Taxes ----
+							for tax_type, rate, amount, acc_head in [
+								("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
+								("SGST", flt(child_row.sgst_rate) + flt(child_row.utgst_rate), flt(child_row.sgst_tax) + flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
+								("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), "Output Tax IGST - KGOPL")
+							]:
+								if amount > 0:
+									existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
+									if existing_tax:
+										existing_tax.tax_amount += amount
+									else:
+										si.append("taxes", {
+											"charge_type": "On Net Total",
+											"account_head": acc_head,
+											"rate": rate * 100,
+											"tax_amount": amount,
+											"description": tax_type
+										})
 						except Exception as item_error:
 							error_names.append(invoice_no)
 							errors.append({
@@ -1040,22 +1062,19 @@ class EcommerceBillImport(Document):
 								"invoice_id": invoice_no,
 								"message": f"Shipment item error: {item_error}"
 							})
-							# frappe.log_error(f"Shipment error in row {idx} for Invoice {invoice_no}: {item_error}", "Shipment Error")
 
 					try:
-						if len(items_append)>0:
+						if len(items_append) > 0:
 							si.save(ignore_permissions=True)
 							for j in si.items:
 								j.item_tax_template = ""
 								j.item_tax_rate = frappe._dict()
+							si.save(ignore_permissions=True)
 
-
-							si.save(ignore_permissions=True)		
 							if invoice_no not in error_names:
 								si.submit()
 								existing_si = si.name
 								success_count += len(shipment_items)
-						# frappe.msgprint(f"Shipment Invoice {si.name} submitted for {len(shipment_items)} items.")
 					except Exception as submit_error:
 						for idx, _ in shipment_items:
 							errors.append({
@@ -1063,7 +1082,6 @@ class EcommerceBillImport(Document):
 								"invoice_id": invoice_no,
 								"message": f"Error submitting shipment invoice: {submit_error}"
 							})
-						# frappe.log_error(f"Submit error for invoice {invoice_no}: {submit_error}", "Submit Shipment Invoice")
 
 				# -------- Draft Submit Before Refund --------
 				if refund_items and existing_si_draft and not existing_si:
@@ -1072,7 +1090,6 @@ class EcommerceBillImport(Document):
 						if invoice_no not in error_names:
 							draft_si.submit()
 							existing_si = draft_si.name
-						# frappe.msgprint(f"Draft invoice {existing_si_draft} submitted to allow refund.")
 					except Exception as e:
 						errors.append({
 							"idx": refund_items[0][0],
@@ -1082,7 +1099,6 @@ class EcommerceBillImport(Document):
 						continue
 
 				# -------- Refund Items --------
-
 				if refund_items:
 					if not existing_si:
 						error_names.append(invoice_no)
@@ -1098,51 +1114,43 @@ class EcommerceBillImport(Document):
 					si_return.return_against = existing_si
 					si_return.customer = val
 					si_return.posting_date = getdate(today())
-					si_return.custom_ecommerce_operator=self.ecommerce_mapping
-					si_return.custom_ecommerce_type=self.amazon_type
+					si_return.custom_ecommerce_operator = self.ecommerce_mapping
+					si_return.custom_ecommerce_type = self.amazon_type
 					si_return.custom_inv_no = invoice_no
-					si.custom_ecommerce_invoice_id=child_row.credit_note_no
-					si.__newname= child_row.credit_note_no
-
 					si_return.taxes = []
 					si_return.update_stock = 1
-					si_error=[]
+
+					si_error = []
 					for idx, child_row in refund_items:
-						exists_in_item = frappe.db.sql("""
-						SELECT sii.name FROM `tabSales Invoice Item` sii
-						JOIN `tabSales Invoice` si ON sii.parent = si.name
-						WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 1
-						""", child_row.shipment_item_id)
-						if exists_in_item:
-							continue
 						try:
-							itemcode = next((i.erp_item for i in amazon.ecom_item_table if i.ecom_item_id == child_row.get(amazon.ecom_sku_column_header)), None)
+							exists_in_item = frappe.db.sql("""
+								SELECT sii.name FROM `tabSales Invoice Item` sii
+								JOIN `tabSales Invoice` si ON sii.parent = si.name
+								WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 1
+							""", child_row.shipment_item_id)
+							if exists_in_item:
+								continue
+
+							itemcode = next(
+								(i.erp_item for i in amazon.ecom_item_table if i.ecom_item_id == child_row.get(amazon.ecom_sku_column_header)),
+								None
+							)
 							if not itemcode:
 								raise Exception(f"Item mapping not found for SKU: {child_row.get(amazon.ecom_sku_column_header)}")
 
-							warehouse, location, com_address,customer_address_in_state,customer_address_out_state= None, None, None,None,None
+							warehouse, location, com_address = None, None, None
 							for wh_map in amazon.ecommerce_warehouse_mapping:
 								if wh_map.ecom_warehouse_id == child_row.warehouse_id:
 									warehouse = wh_map.erp_warehouse
 									location = wh_map.location
 									com_address = wh_map.erp_address
-									# customer_address_in_state=wh_map.customer_address_in_state
-									# customer_address_out_state=wh_map.customer_address_out_state
-
 									break
 							if not warehouse:
-								warehouse=amazon.default_company_warehouse
-								location=amazon.default_company_location
-								com_address=amazon.default_company_address
-								# customer_address_in_state=amazon.customer_address_in_state
-								# customer_address_out_state=amazon.customer_address_out_state
+								warehouse = amazon.default_company_warehouse
+								location = amazon.default_company_location
+								com_address = amazon.default_company_address
 
-							# if flt(child_row.cgst_tax)>0:
-							# 	si_return.customer_address=customer_address_in_state
-							# elif flt(child_row.igst_tax):
-							# 	si_return.customer_address=customer_address_out_state
-							# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
-							ecommerce_gstin=None
+							ecommerce_gstin = None
 							for gstin in amazon.ecommerce_gstin_mapping:
 								if gstin.ecommerce_operator_gstin == child_row.seller_gstin:
 									ecommerce_gstin = gstin.ecommerce_operator_gstin
@@ -1151,43 +1159,44 @@ class EcommerceBillImport(Document):
 								si_return.location = location
 							if not si_return.set_warehouse:
 								si_return.set_warehouse = warehouse
-
 							si_return.company_address = com_address
 							if child_row.ship_to_state:
-								state=child_row.ship_to_state
-								si_return.place_of_supply=state_code_dict.get(str(state.lower()))
+								state = child_row.ship_to_state
+								si_return.place_of_supply = state_code_dict.get(str(state.lower()))
 							si_return.ecommerce_gstin = ecommerce_gstin
-							hsn_code=frappe.db.get_value("Item",itemcode,"gst_hsn_code")
+
+							hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
 							si_return.append("items", {
 								"item_code": itemcode,
 								"qty": -flt(child_row.quantity),
-								"rate": abs(flt(child_row.tax_exclusive_gross) )/flt(child_row.quantity),
+								"rate": abs(flt(child_row.tax_exclusive_gross)) / flt(child_row.quantity),
 								"description": child_row.item_description,
 								"warehouse": warehouse,
-								"gst_hsn_code":hsn_code,
+								"gst_hsn_code": hsn_code,
 								"income_account": amazon.income_account,
 								"tax_rate": flt(child_row.total_tax_amount),
 								"margin_type": "Amount" if flt(child_row.item_promo_discount) > 0 else None,
 								"margin_rate_or_amount": flt(child_row.item_promo_discount),
 								"custom_ecom_item_id": child_row.shipment_item_id
 							})
-							for tax_type,rate, amount, acc_head in [
-									("CGST", flt(child_row.cgst_rate),flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
-									("SGST",flt(child_row.sgst_rate)+flt(child_row.utgst_rate), flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
-									("IGST", flt(child_row.igst_rate),flt(child_row.igst_tax) ,"Output Tax IGST - KGOPL")
-									]:
-										if amount>0:
-											existing_tax = next((t for t in si_return.taxes if t.account_head == acc_head), None)
-											if existing_tax:
-												existing_tax.tax_amount += amount
-											else:
-												si_return.append("taxes", {
-													"charge_type": "On Net Total",
-													"account_head": acc_head,
-													"rate":rate*100,
-													"tax_amount": amount,
-													"description": tax_type
-												})
+
+							for tax_type, rate, amount, acc_head in [
+								("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
+								("SGST", flt(child_row.sgst_rate) + flt(child_row.utgst_rate), flt(child_row.sgst_tax) + flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
+								("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), "Output Tax IGST - KGOPL")
+							]:
+								if amount > 0:
+									existing_tax = next((t for t in si_return.taxes if t.account_head == acc_head), None)
+									if existing_tax:
+										existing_tax.tax_amount += amount
+									else:
+										si_return.append("taxes", {
+											"charge_type": "On Net Total",
+											"account_head": acc_head,
+											"rate": rate * 100,
+											"tax_amount": amount,
+											"description": tax_type
+										})
 						except Exception as item_error:
 							si_error.append(invoice_no)
 							errors.append({
@@ -1195,21 +1204,16 @@ class EcommerceBillImport(Document):
 								"invoice_id": invoice_no,
 								"message": f"Refund item error: {item_error}"
 							})
-							# frappe.log_error(f"Refund error in row {idx} for Invoice {invoice_no}: {item_error}", "Refund Error")
 
 					try:
 						si_return.save(ignore_permissions=True)
 						for j in si_return.items:
 							j.item_tax_template = ""
 							j.item_tax_rate = frappe._dict()
-
-
 						si_return.save(ignore_permissions=True)
+
 						if invoice_no not in si_error:
 							si_return.submit()
-							# si_return.db_set("name",child_row.credit_note_no)
-							# frappe.db.set_value("Sales Invoice",si.name ,"name",child_row.credit_note_no)
-
 							success_count += len(refund_items)
 					except Exception as submit_error:
 						for idx, _ in refund_items:
@@ -1218,7 +1222,6 @@ class EcommerceBillImport(Document):
 								"invoice_id": invoice_no,
 								"message": f"Error submitting refund invoice: {submit_error}"
 							})
-						# frappe.log_error(f"Submit refund error for invoice {invoice_no}: {submit_error}", "Submit Refund Invoice")
 
 			except Exception as e:
 				for idx, _ in items_data:
@@ -1227,9 +1230,11 @@ class EcommerceBillImport(Document):
 						"invoice_id": invoice_no,
 						"message": f"Invoice processing error: {str(e)}"
 					})
-				# frappe.log_error(f"Invoice group processing failed for {invoice_no}: {e}", "Invoice Group Error")
 
-		# -------- Final Summary & Error HTML --------
+			# ---- 🔹 Update realtime progress ----
+			update_progress(count, total_invoices, f"Processed {count}/{total_invoices} invoices")
+
+		# -------- Final Summary --------
 		if errors:
 			self.status = "Partial Success" if success_count else "Error"
 			indicator = "orange" if success_count else "red"
@@ -1241,6 +1246,10 @@ class EcommerceBillImport(Document):
 
 		self.error_json = str(json.dumps(errors))
 		self.save()
+
+		# ---- 🔹 Final 100% Update ----
+		update_progress(total_invoices, total_invoices, "Amazon B2C Import Completed ✅")
+
 		return success_count
 
 	
@@ -1260,44 +1269,48 @@ class EcommerceBillImport(Document):
 			invoice_no = row.invoice_number
 			invoice_groups.setdefault(invoice_no, []).append((idx, row))
 
-		for invoice_no, group_rows in invoice_groups.items():
+		total_invoices = len(invoice_groups)
+
+		# Loop through invoice groups
+		for count, (invoice_no, group_rows) in enumerate(invoice_groups.items(), start=1):
 			try:
 				is_taxable = any(flt(row.igst_rate) > 0 for _, row in group_rows)
 				doctype = "Sales Invoice" if is_taxable else "Delivery Note"
 				doctype_m = "Purchase Invoice" if is_taxable else "Purchase Receipt"
+
 				existing_name = frappe.db.get_value(doctype, {
 					"custom_inv_no": invoice_no,
 					"is_return": 0,
-					"docstatus":["!=",2]
-				},"name")
+					"docstatus": ["!=", 2]
+				}, "name")
 
 				existing_name_purchase = frappe.db.get_value(doctype_m, {
 					"custom_inv_no": invoice_no,
 					"is_return": 0,
-					"docstatus":["!=",2]
-				},"name")
+					"docstatus": ["!=", 2]
+				}, "name")
+
 				if existing_name:
 					existing_doc = frappe.get_doc(doctype, existing_name)
 					if existing_doc.docstatus == 0:
 						existing_doc.submit()
 				if existing_name_purchase:
-					existing_doc_pur = frappe.get_doc(doctype, existing_name_purchase)
+					existing_doc_pur = frappe.get_doc(doctype_m, existing_name_purchase)
 					if existing_doc_pur.docstatus == 0:
 						existing_doc_pur.submit()
 
-					
-				# Create Sales Invoice or Delivery Note
+				# -------- Create Sales Invoice or Delivery Note --------
 				if not existing_name:
 					doc = frappe.new_doc(doctype)
 					doc.customer = customer
 					doc.posting_date = getdate(group_rows[0][1].get("invoice_date")) if is_taxable else getdate(today())
 					doc.custom_inv_no = invoice_no if is_taxable else None
-					doc.custom_ecommerce_operator=self.ecommerce_mapping
-					doc.custom_ecommerce_type=self.amazon_type
+					doc.custom_ecommerce_operator = self.ecommerce_mapping
+					doc.custom_ecommerce_type = self.amazon_type
 					doc.taxes = [] if is_taxable else None
 					doc.update_stock = 1 if is_taxable else None
 					doc.set_warehouse = "" if not is_taxable else None
-					doc.__newname=invoice_no
+					doc.__newname = invoice_no
 					doc.items = []
 
 					for idx, row in group_rows:
@@ -1310,7 +1323,6 @@ class EcommerceBillImport(Document):
 							if wh.ecom_warehouse_id == row.ship_from_fc), None)
 						if not wh:
 							raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
-						
 
 						doc.location = wh.location
 						doc.company_address = wh.erp_address
@@ -1325,50 +1337,48 @@ class EcommerceBillImport(Document):
 						})
 
 						if is_taxable:
-							doc.custom_ecommerce_invoice_id=invoice_no
-							for tax_type,rate, amount, acc_head in [
-									("CGST", flt(row.cgst_rate),flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
-									("SGST",flt(row.sgst_rate)+flt(row.utgst_rate), flt(row.sgst_amount)+flt(row.utgst_amount), "Output Tax SGST - KGOPL"),
-									("IGST", flt(row.igst_rate),flt(row.igst_amount) ,"Output Tax IGST - KGOPL")
-									]:
-										if amount>0:
-											existing_tax = next((t for t in doc.taxes if t.account_head == acc_head), None)
-											if existing_tax:
-												existing_tax.tax_amount += amount
-											else:
-												doc.append("taxes", {
-													"charge_type": "On Net Total",
-													"account_head": acc_head,
-													"rate":rate*100,
-													"tax_amount": amount,
-													"description": tax_type
-												})
+							doc.custom_ecommerce_invoice_id = invoice_no
+							for tax_type, rate, amount, acc_head in [
+								("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
+								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), flt(row.sgst_amount) + flt(row.utgst_amount), "Output Tax SGST - KGOPL"),
+								("IGST", flt(row.igst_rate), flt(row.igst_amount), "Output Tax IGST - KGOPL")
+							]:
+								if amount > 0:
+									existing_tax = next((t for t in doc.taxes if t.account_head == acc_head), None)
+									if existing_tax:
+										existing_tax.tax_amount += amount
+									else:
+										doc.append("taxes", {
+											"charge_type": "On Net Total",
+											"account_head": acc_head,
+											"rate": rate * 100,
+											"tax_amount": amount,
+											"description": tax_type
+										})
 
 					doc.save(ignore_permissions=True)
 					for j in doc.items:
 						j.item_tax_template = ""
 						j.item_tax_rate = frappe._dict()
 
-
 					doc.save(ignore_permissions=True)
 					doc.submit()
 					success_count += len(group_rows)
 					frappe.msgprint(f"{doc.doctype} {doc.name} created for Invoice No {invoice_no}")
 
-				# Inter-company: Purchase Invoice or Receipt
+				# -------- Inter-company: Purchase Invoice or Receipt --------
 				if not existing_name_purchase:
-					if group_rows[0][1].get("transaction_type") !="FC_REMOVAL":
+					if group_rows[0][1].get("transaction_type") != "FC_REMOVAL":
 						pi_doc = frappe.new_doc("Purchase Invoice" if is_taxable else "Purchase Receipt")
 						pi_doc.supplier = ecommerce_mapping.inter_company_supplier
 						pi_doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
 						pi_doc.custom_invoice_no = invoice_no
 						pi_doc.customer = customer
-						pi_doc.custom_ecommerce_operator=self.ecommerce_mapping
-						pi_doc.custom_ecommerce_type=self.amazon_type
-						doc.__newname=invoice_no
+						pi_doc.custom_ecommerce_operator = self.ecommerce_mapping
+						pi_doc.custom_ecommerce_type = self.amazon_type
+						doc.__newname = invoice_no
 						if is_taxable:
-							pi_doc.bill_no=invoice_no
-						
+							pi_doc.bill_no = invoice_no
 
 						for idx, row in group_rows:
 							item_code = next((e_item.erp_item for e_item in ecommerce_mapping.ecom_item_table
@@ -1381,10 +1391,9 @@ class EcommerceBillImport(Document):
 							if not wh:
 								raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
 
-							if wh:
-								warehouse = wh.erp_warehouse
-								location = wh.location
-								com_address = wh.erp_address
+							warehouse = wh.erp_warehouse
+							location = wh.location
+							com_address = wh.erp_address
 
 							pi_doc.location = location
 							pi_doc.company_address = com_address
@@ -1397,33 +1406,32 @@ class EcommerceBillImport(Document):
 								"rate": flt(row.taxable_value),
 								"warehouse": warehouse,
 							})
-							if is_taxable:
-								for tax_type,rate, amount, acc_head in [
-									("CGST", flt(row.cgst_rate),flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
-									("SGST",flt(row.sgst_rate)+flt(row.utgst_rate), flt(row.sgst_amount)+flt(row.utgst_amount), "Output Tax SGST - KGOPL"),
-									("IGST", flt(row.igst_rate),flt(row.igst_amount) ,"Output Tax IGST - KGOPL")
-									]:
-										if amount>0:
-											existing_tax = next((t for t in pi_doc.taxes if t.account_head == acc_head), None)
-											if existing_tax:
-												existing_tax.tax_amount += amount
-											else:
-												pi_doc.append("taxes", {
-													"charge_type": "On Net Total",
-													"account_head": acc_head,
-													"rate":rate*100,
-													"tax_amount": amount,
-													"description": tax_type
-												})
 
+							if is_taxable:
+								for tax_type, rate, amount, acc_head in [
+									("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
+									("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), flt(row.sgst_amount) + flt(row.utgst_amount), "Output Tax SGST - KGOPL"),
+									("IGST", flt(row.igst_rate), flt(row.igst_amount), "Output Tax IGST - KGOPL")
+								]:
+									if amount > 0:
+										existing_tax = next((t for t in pi_doc.taxes if t.account_head == acc_head), None)
+										if existing_tax:
+											existing_tax.tax_amount += amount
+										else:
+											pi_doc.append("taxes", {
+												"charge_type": "On Net Total",
+												"account_head": acc_head,
+												"rate": rate * 100,
+												"tax_amount": amount,
+												"description": tax_type
+											})
 
 						pi_doc.save(ignore_permissions=True)
 						for j in pi_doc.items:
 							j.item_tax_template = ""
 							j.item_tax_rate = frappe._dict()
 
-
-						pi_doc.save(ignore_permissions=True)				
+						pi_doc.save(ignore_permissions=True)
 						pi_doc.submit()
 
 			except Exception as e:
@@ -1434,10 +1442,25 @@ class EcommerceBillImport(Document):
 						"message": f"{str(e)}"
 					})
 
-		# Final status update
+			# 🔹 Realtime progress update after each invoice group
+			percent = int((count / total_invoices) * 100)
+			frappe.publish_realtime(
+				"data_import_progress",
+				{"progress": percent, "message": f"Processed {count}/{total_invoices} invoices"},
+				user=frappe.session.user
+			)
+
+		# -------- Final status update --------
 		self.error_json = json.dumps(errors) if errors else ""
 		self.status = "Partial Success" if errors and success_count else "Error" if errors else "Success"
 		self.save()
+
+		# 🔹 Final realtime update
+		frappe.publish_realtime(
+			"data_import_progress",
+			{"progress": 100, "message": "Amazon Stock Transfer Import Completed ✅"},
+			user=frappe.session.user
+		)
 
 		return success_count
 
@@ -2365,3 +2388,15 @@ def generate_error_html(errors):
     
     return html_content
 
+
+
+
+
+def update_progress(current, total, message="Processing..."):
+    """Send realtime progress to the frontend"""
+    percent = int((current / total) * 100) if total else 100
+    frappe.publish_realtime(
+        "data_import_progress",
+        {"progress": percent, "message": message},
+        user=frappe.session.user
+    )
