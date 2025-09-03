@@ -789,8 +789,8 @@ class EcommerceBillImport(Document):
 						si_return.custom_ecommerce_type=self.amazon_type
 						si_return.customer = customer
 						si_return.posting_date = getdate(today())
-						si_return.custom_inv_no = child_row.credit_note_no
-						si_return.custom_ecommerce_invoice_id=child_row.credit_note_no
+						si_return.custom_ecommerce_invoice_id=refund_items[0][1].get("credit_note_no")
+						si_return.__newname = refund_items[0][1].get("credit_note_no")
 						si_return.custom_inv_no = invoice_no
 						si_return.update_stock = 1
 						items_append=[]
@@ -1117,12 +1117,17 @@ class EcommerceBillImport(Document):
 					si_return.custom_ecommerce_operator = self.ecommerce_mapping
 					si_return.custom_ecommerce_type = self.amazon_type
 					si_return.custom_inv_no = invoice_no
+					si_return.custom_ecommerce_invoice_id = refund_items[0][1].get("credit_note_no")
+					si_return.__newname = refund_items[0][1].get("credit_note_no")
 					si_return.taxes = []
 					si_return.update_stock = 1
+					print("#################(489595099505050)",refund_items[0][1].get("credit_note_no"))
 
 					si_error = []
 					for idx, child_row in refund_items:
 						try:
+							print("@@@@@@@@@@@@@@@@@@@@@@@@@@@",child_row.credit_note_no)
+							
 							exists_in_item = frappe.db.sql("""
 								SELECT sii.name FROM `tabSales Invoice Item` sii
 								JOIN `tabSales Invoice` si ON sii.parent = si.name
