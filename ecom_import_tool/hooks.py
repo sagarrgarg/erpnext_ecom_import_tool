@@ -142,7 +142,10 @@ fixtures = [
 # Override standard doctype classes
 
 override_doctype_class = {
-	"Sales Invoice": "ecom_import_tool.override.CustomSalesInvoice"
+	"Sales Invoice": "ecom_import_tool.override.CustomSalesInvoice",
+    "Delivery Note": "ecom_import_tool.override.CustomDeliveryNote",
+    "Purchase Receipt": "ecom_import_tool.override.CustomPurchaseReceipt",
+    "Purchase Invoice": "ecom_import_tool.override.CustomPurchaseInvoice"
 }
 
 # Document Events

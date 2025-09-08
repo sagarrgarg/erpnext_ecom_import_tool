@@ -584,7 +584,7 @@ class EcommerceBillImport(Document):
 				gst_details={}
 				customer = frappe.db.get_value("Customer", {"gstin": items_data[0][1].get("customer_bill_to_gstid")}, "name")
 				if not customer:
-					if len(items_data[0][1].get("customer_bill_to_gstid"))==15:
+					if len(str(items_data[0][1].get("customer_bill_to_gstid")))==15:
 						gst_details=get_gstin_info(items_data[0][1].get("customer_bill_to_gstid"))
 						status=gst_details.get("status")
 					if status=="Active":
@@ -672,7 +672,7 @@ class EcommerceBillImport(Document):
 										location = wh_map.location
 										com_address = wh_map.erp_address
 										break
-								
+								print("##########################",child_row.warehouse_id,warehouse)
 								if not warehouse:
 									print("##############################AJ",warehouse)
 									error_names.append(invoice_no)
@@ -1311,7 +1311,7 @@ class EcommerceBillImport(Document):
 					doc = frappe.new_doc(doctype)
 					doc.customer = customer
 					doc.posting_date = getdate(group_rows[0][1].get("invoice_date")) if is_taxable else getdate(today())
-					doc.custom_inv_no = invoice_no if is_taxable else None
+					doc.custom_inv_no = invoice_no
 					doc.custom_ecommerce_operator = self.ecommerce_mapping
 					doc.custom_ecommerce_type = self.amazon_type
 					doc.taxes = [] if is_taxable else None
@@ -1374,72 +1374,83 @@ class EcommerceBillImport(Document):
 					frappe.msgprint(f"{doc.doctype} {doc.name} created for Invoice No {invoice_no}")
 
 				# -------- Inter-company: Purchase Invoice or Receipt --------
+				print("######################",existing_name_purchase)
 				if not existing_name_purchase:
-					if group_rows[0][1].get("transaction_type") != "FC_REMOVAL":
-						pi_doc = frappe.new_doc("Purchase Invoice" if is_taxable else "Purchase Receipt")
-						pi_doc.supplier = ecommerce_mapping.inter_company_supplier
-						pi_doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
-						pi_doc.custom_invoice_no = invoice_no
-						pi_doc.customer = customer
-						pi_doc.custom_ecommerce_operator = self.ecommerce_mapping
-						pi_doc.custom_ecommerce_type = self.amazon_type
-						doc.__newname = invoice_no
-						if is_taxable:
-							pi_doc.bill_no = invoice_no
+					pi_doc = frappe.new_doc("Purchase Invoice" if is_taxable else "Purchase Receipt")
+					pi_doc.supplier = ecommerce_mapping.inter_company_supplier
+					pi_doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
+					pi_doc.custom_inv_no = invoice_no
+					pi_doc.customer = customer
+					pi_doc.custom_ecommerce_operator = self.ecommerce_mapping
+					pi_doc.custom_ecommerce_type = self.amazon_type
+					pi_doc.__newname = invoice_no
+					if is_taxable:
+						pi_doc.bill_no = invoice_no
+					warehouse = None
+					location = None
+					com_address = None
+					for idx, row in group_rows:
+						item_code = next((e_item.erp_item for e_item in ecommerce_mapping.ecom_item_table
+							if e_item.ecom_item_id == row.get(ecommerce_mapping.ecom_sku_column_header)), None)
+						if not item_code:
+							raise Exception(f"Item mapping not found for SKU {row.sku}")
 
-						for idx, row in group_rows:
-							item_code = next((e_item.erp_item for e_item in ecommerce_mapping.ecom_item_table
-								if e_item.ecom_item_id == row.get(ecommerce_mapping.ecom_sku_column_header)), None)
-							if not item_code:
-								raise Exception(f"Item mapping not found for SKU {row.sku}")
-
-							wh = next((wh for wh in ecommerce_mapping.ecommerce_warehouse_mapping
-								if wh.ecom_warehouse_id == row.ship_to_fc), None)
-							if not wh:
-								raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
-
+						wh = next((wh for wh in ecommerce_mapping.ecommerce_warehouse_mapping
+							if wh.ecom_warehouse_id == row.ship_from_fc), None)
+						if not wh:
+							raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
+						if wh:
 							warehouse = wh.erp_warehouse
 							location = wh.location
 							com_address = wh.erp_address
 
-							pi_doc.location = location
-							pi_doc.company_address = com_address
-							if row.ship_to_state:
-								pi_doc.place_of_supply = state_code_dict.get(str(row.ship_to_state).lower())
+						if not row.ship_from_fc:
+							warehouse=ecommerce_mapping.default_company_warehouse
+							location = ecommerce_mapping.default_company_location
+							com_address = ecommerce_mapping.default_company_address
 
-							pi_doc.append("items", {
-								"item_code": item_code,
-								"qty": flt(row.quantity),
-								"rate": flt(row.taxable_value),
-								"warehouse": warehouse,
-							})
+						print("#################################677478",com_address)
+						pi_doc.location = location
+						pi_doc.billing_address = com_address
+					
+						# if row.ship_to_state:
+						# 	pi_doc.place_of_supply = state_code_dict.get(str(row.ship_to_state).lower())
 
-							if is_taxable:
-								for tax_type, rate, amount, acc_head in [
-									("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
-									("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), flt(row.sgst_amount) + flt(row.utgst_amount), "Output Tax SGST - KGOPL"),
-									("IGST", flt(row.igst_rate), flt(row.igst_amount), "Output Tax IGST - KGOPL")
-								]:
-									if amount > 0:
-										existing_tax = next((t for t in pi_doc.taxes if t.account_head == acc_head), None)
-										if existing_tax:
-											existing_tax.tax_amount += amount
-										else:
-											pi_doc.append("taxes", {
-												"charge_type": "On Net Total",
-												"account_head": acc_head,
-												"rate": rate * 100,
-												"tax_amount": amount,
-												"description": tax_type
-											})
+						pi_doc.append("items", {
+							"item_code": item_code,
+							"qty": flt(row.quantity),
+							"rate": flt(row.taxable_value),
+							"warehouse": warehouse,
+						})
 
-						pi_doc.save(ignore_permissions=True)
-						for j in pi_doc.items:
-							j.item_tax_template = ""
-							j.item_tax_rate = frappe._dict()
+						if is_taxable:
+							pi_doc.custom_ecommerce_invoice_id = invoice_no
+							for tax_type, rate, amount, acc_head in [
+								("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Input Tax CGST - KGOPL"),
+								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), flt(row.sgst_amount) + flt(row.utgst_amount), "Input Tax SGST - KGOPL"),
+								("IGST", flt(row.igst_rate), flt(row.igst_amount), "Input Tax IGST - KGOPL")
+							]:
+								if amount > 0:
+									existing_tax = next((t for t in pi_doc.taxes if t.account_head == acc_head), None)
+									if existing_tax:
+										existing_tax.tax_amount += amount
+									else:
+										pi_doc.append("taxes", {
+											"charge_type": "On Net Total",
+											"account_head": acc_head,
+											"rate": rate * 100,
+											"tax_amount": amount,
+											"description": tax_type
+										})
 
-						pi_doc.save(ignore_permissions=True)
-						pi_doc.submit()
+					pi_doc.save(ignore_permissions=True)
+					# for j in pi_doc.items:
+					# 	j.item_tax_template = ""
+					# 	j.item_tax_rate = frappe._dict()
+
+					# pi_doc.save(ignore_permissions=True)
+					# print("####################################666",)
+					pi_doc.submit()
 
 			except Exception as e:
 				for idx, row in group_rows:
@@ -2215,7 +2226,7 @@ class EcommerceBillImport(Document):
 		# ---------- RETURNS ----------
 		for i in self.jio_mart_items:
 			try:
-				if i.event_sub_type != "return":
+				if i.event_type != "return":
 					continue
 
 				# Skip if order_item_id already exists in submitted Sales Invoice Item
