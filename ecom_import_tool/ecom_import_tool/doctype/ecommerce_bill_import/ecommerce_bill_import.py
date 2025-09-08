@@ -62,7 +62,6 @@ class EcommerceBillImport(Document):
 			frappe.throw(_("Please select an Ecommerce Mapping"))
 
 	def before_save(self):
-		frappe.msgprint("Data Import Started")
 		if self.ecommerce_mapping=="Amazon":
 			if self.amazon_type=="MTR B2B":
 				self.show_preview()
@@ -83,6 +82,9 @@ class EcommerceBillImport(Document):
 
 	@frappe.whitelist()
 	def create_invoice(self):
+		frappe.msgprint("Data Import Started")
+		# self.invoice_creation()
+		
 		job = frappe.enqueue(
 		self.invoice_creation,
 		queue='long',
@@ -1930,7 +1932,7 @@ class EcommerceBillImport(Document):
 				if not original_si_inv:
 					errors.append({
 						"idx": i.idx,
-						"invoice_id": i.order_item_id,
+						"invoice_id": i.cred_order_item_id,
 						"event": "Original Invoice Not Found",
 						"message": "Original Invoice Not  Found"
 					})
@@ -1969,8 +1971,8 @@ class EcommerceBillImport(Document):
 				si = frappe.new_doc("Sales Invoice") if not si_inv else frappe.get_doc("Sales Invoice", si_inv_draft)
 				si.customer = val
 				si.set_posting_time = 1
-				if i.destination_address_state:
-					state=i.destination_address_state
+				if i.customer_state:
+					state=i.customer_state
 					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				si.posting_date = getdate(i.refund_date_time)
 				si.custom_ecommerce_operator=self.ecommerce_mapping
@@ -1998,9 +2000,9 @@ class EcommerceBillImport(Document):
 					"income_account": amazon.income_account
 				})
 
-				tax_rate=flt(i.gst_rate_on_gmv)*100
+				tax_rate=flt(i.gst_rate)*100
 				tax_amt = flt(i.gmv)*(tax_rate/100)
-				if i.source_address_state == i.destination_address_state:
+				if i.warehouse_state == i.customer_state:
 					if tax_amt > 0:
 						si.customer_address=customer_address_in_state
 						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax CGST - KGOPL","tax_amount": flt(tax_amt) / 2,"rate":tax_rate/2, "description": "CGST"})
