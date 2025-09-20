@@ -1,26 +1,16 @@
 frappe.ui.form.on("Purchase Receipt", {
     refresh: function(frm) {
-        if (!frm.doc.custom_ecommerce_operator) {
-            // Hide the field by label using jQuery
-            $('label.control-label:contains("Name")')
-                .closest('.form-group')
-                .hide();
-        } else {
-            $('label.control-label:contains("Name")')
-                .closest('.form-group')
-                .show();
-        }
+        toggleNameField(frm);
     },
     setup: function(frm) {
-        if (!frm.doc.custom_ecommerce_operator) {
-            // Hide the field by label using jQuery
-            $('label.control-label:contains("Name")')
-                .closest('.form-group')
-                .hide();
-        } else {
-            $('label.control-label:contains("Name")')
-                .closest('.form-group')
-                .show();
-        }
+        toggleNameField(frm);
     }
 });
+
+function toggleNameField(frm) {
+    // Find label whose text is exactly "Name"
+    $('label.control-label').filter(function() {
+        return $(this).text().trim() === "Name";
+    }).closest('.form-group')
+      .toggle(!!frm.doc.custom_ecommerce_operator);
+}
