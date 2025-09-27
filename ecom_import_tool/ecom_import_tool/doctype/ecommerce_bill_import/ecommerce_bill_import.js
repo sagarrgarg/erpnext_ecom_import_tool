@@ -12,7 +12,12 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 					method: "create_invoice",
 					doc: frm.doc,
 					callback: function(r) {
-					frm.refresh()
+						if(r.message){
+							frm.refresh_field("error_html");
+							frm.reload_doc();
+						}
+						// Refresh the entire form to update all fields
+						
 					}
 				});
 			}).addClass("btn-primary");
@@ -84,24 +89,60 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				return;
 			}
 		
-			let html = `<table class="table table-bordered">
+			// Generate unique ID for this instance
+			const uniqueId = Math.floor(Math.random() * 10000);
+
+			let html = `
+				<div style="margin-bottom: 10px;">
+					<label style="cursor: pointer; user-select: none;">
+						<input type="checkbox" id="hide_duplicates_${uniqueId}" onchange="toggleDuplicateErrors_${uniqueId}()" style="margin-right: 8px;">
+						<span>Hide Duplicate Entry Errors</span>
+					</label>
+				</div>
+				<table class="table table-bordered" id="error_table_${uniqueId}">
 				<thead><tr>
 					<th>Idx</th>
 					<th>Invoice ID</th>
 					<th>Event</th>
 					<th>Error Message</th>
 				</tr></thead><tbody>`;
-		
+
 			error.forEach(row => {
-				html += `<tr>
+				// Check if this is a duplicate entry error
+				const isDuplicate = row.message && (
+					row.message.includes('Duplicate entry') ||
+					row.message.includes('duplicate entry')
+				);
+				const rowClass = isDuplicate ? `duplicate-error-${uniqueId}` : `other-error-${uniqueId}`;
+
+				html += `<tr class="${rowClass}">
 					<td>${row.idx ?? ''}</td>
 					<td>${row.invoice_id}</td>
 					<td>${row.event}</td>
 					<td style="color:red;">${frappe.utils.escape_html(row.message)}</td>
 				</tr>`;
 			});
-		
+
 			html += `</tbody></table>`;
+
+			// Add JavaScript for toggle functionality
+			html += `
+				<script>
+					function toggleDuplicateErrors_${uniqueId}() {
+						var checkbox = document.getElementById('hide_duplicates_${uniqueId}');
+						var duplicateRows = document.getElementsByClassName('duplicate-error-${uniqueId}');
+
+						for (var i = 0; i < duplicateRows.length; i++) {
+							if (checkbox.checked) {
+								duplicateRows[i].style.display = 'none';
+							} else {
+								duplicateRows[i].style.display = '';
+							}
+						}
+					}
+				</script>
+			`;
+
 			frm.fields_dict.error_html.$wrapper.html(html);
 			frm.refresh_field("error_html");
 		}

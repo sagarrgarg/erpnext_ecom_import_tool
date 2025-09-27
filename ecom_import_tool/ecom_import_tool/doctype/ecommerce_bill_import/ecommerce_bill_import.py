@@ -633,7 +633,7 @@ class EcommerceBillImport(Document):
 						SELECT sii.name FROM `tabSales Invoice Item` sii
 						JOIN `tabSales Invoice` si ON sii.parent = si.name
 						WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
-						""", child_row.shipment_item_id)
+						""", items_data[0][1].get("shipment_item_id"))
 					if exists_in_item:
 						# 🔹 Per-invoice group progress update before continue
 						percent = int((count / total_invoices) * 100)
@@ -649,7 +649,7 @@ class EcommerceBillImport(Document):
 						else:
 							si = frappe.new_doc("Sales Invoice")
 							si.customer = customer
-							si.posting_date = getdate(today())
+							si.posting_date = items_data[0][1].get("invoice_date")
 							si.custom_inv_no = invoice_no
 							si.custom_ecommerce_invoice_id=invoice_no
 							si.__newname=invoice_no
@@ -695,6 +695,8 @@ class EcommerceBillImport(Document):
 								if status!="Active":
 									if child_row.ship_to_state:
 										state=child_row.ship_to_state
+										if not state_code_dict.get(str(state.lower())):
+											raise Exception(f"State name Is Wrong Please Check")
 										si.place_of_supply=state_code_dict.get(str(state.lower()))
 
 								si.append("items", {
@@ -776,13 +778,13 @@ class EcommerceBillImport(Document):
 						)
 						continue
 					try:
-						if not existing_si:
-							si_return_error.append(invoice_no)
-							errors.append({
-								"idx": refund_items[0][0],
-								"invoice_id": invoice_no,
-								"message": f"Refund requested but original submitted invoice not found for {invoice_no}."
-							})
+						# if not existing_si:
+						# 	si_return_error.append(invoice_no)
+						# 	errors.append({
+						# 		"idx": refund_items[0][0],
+						# 		"invoice_id": invoice_no,
+						# 		"message": f"Refund requested but original submitted invoice not found for {invoice_no}."
+						# 	})
 
 						si_return = frappe.new_doc("Sales Invoice")
 						si_return.is_return = 1
@@ -790,7 +792,7 @@ class EcommerceBillImport(Document):
 						si_return.custom_ecommerce_operator=self.ecommerce_mapping
 						si_return.custom_ecommerce_type=self.amazon_type
 						si_return.customer = customer
-						si_return.posting_date = getdate(today())
+						si_return.posting_date = items_data[0][1].get("invoice_date")
 						si_return.custom_ecommerce_invoice_id=refund_items[0][1].get("credit_note_no")
 						si_return.__newname = refund_items[0][1].get("credit_note_no")
 						si_return.custom_inv_no = invoice_no
@@ -822,6 +824,8 @@ class EcommerceBillImport(Document):
 								if status!="Active":
 									if child_row.ship_to_state:
 										state=child_row.ship_to_state
+										if not state_code_dict.get(str(state.lower())):
+											raise Exception(f"State name Is Wrong Please Check")
 										si.place_of_supply=state_code_dict.get(str(state.lower()))
 
 								if not si_return.location:
@@ -966,7 +970,7 @@ class EcommerceBillImport(Document):
 					else:
 						si = frappe.new_doc("Sales Invoice")
 						si.customer = val
-						si.posting_date = getdate(today())
+						si.posting_date = items_data[0][1].get("invoice_date")
 						si.custom_inv_no = invoice_no
 						si.custom_ecommerce_invoice_id = invoice_no
 						si.__newname = invoice_no
@@ -1020,6 +1024,8 @@ class EcommerceBillImport(Document):
 							si.company_address = com_address
 							if child_row.ship_to_state:
 								state = child_row.ship_to_state
+								if not state_code_dict.get(str(state.lower())):
+									raise Exception(f"State name Is Wrong Please Check")
 								si.place_of_supply = state_code_dict.get(str(state.lower()))
 							si.ecommerce_gstin = ecommerce_gstin
 
@@ -1102,20 +1108,20 @@ class EcommerceBillImport(Document):
 
 				# -------- Refund Items --------
 				if refund_items:
-					if not existing_si:
-						error_names.append(invoice_no)
-						errors.append({
-							"idx": refund_items[0][0],
-							"invoice_id": invoice_no,
-							"message": f"Refund requested but original submitted invoice not found for {invoice_no}."
-						})
-						continue
+					# if not existing_si:
+					# 	error_names.append(invoice_no)
+					# 	errors.append({
+					# 		"idx": refund_items[0][0],
+					# 		"invoice_id": invoice_no,
+					# 		"message": f"Refund requested but original submitted invoice not found for {invoice_no}."
+					# 	})
+					# 	continue
 
 					si_return = frappe.new_doc("Sales Invoice")
 					si_return.is_return = 1
 					si_return.return_against = existing_si
 					si_return.customer = val
-					si_return.posting_date = getdate(today())
+					si_return.posting_date = items_data[0][1].get("invoice_date")
 					si_return.custom_ecommerce_operator = self.ecommerce_mapping
 					si_return.custom_ecommerce_type = self.amazon_type
 					si_return.custom_inv_no = invoice_no
@@ -1169,6 +1175,8 @@ class EcommerceBillImport(Document):
 							si_return.company_address = com_address
 							if child_row.ship_to_state:
 								state = child_row.ship_to_state
+								if not state_code_dict.get(str(state.lower())):
+									raise Exception(f"State name Is Wrong Please Check")
 								si_return.place_of_supply = state_code_dict.get(str(state.lower()))
 							si_return.ecommerce_gstin = ecommerce_gstin
 
@@ -1310,7 +1318,7 @@ class EcommerceBillImport(Document):
 				if not existing_name:
 					doc = frappe.new_doc(doctype)
 					doc.customer = customer
-					doc.posting_date = getdate(group_rows[0][1].get("invoice_date")) if is_taxable else getdate(today())
+					doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
 					doc.custom_inv_no = invoice_no
 					doc.custom_ecommerce_operator = self.ecommerce_mapping
 					doc.custom_ecommerce_type = self.amazon_type
@@ -1334,6 +1342,9 @@ class EcommerceBillImport(Document):
 						doc.location = wh.location
 						doc.company_address = wh.erp_address
 						if row.ship_to_state:
+							state=row.ship_to_state
+							if not state_code_dict.get(str(state.lower())):
+								raise Exception(f"State name Is Wrong Please Check")
 							doc.place_of_supply = state_code_dict.get(str(row.ship_to_state).lower())
 
 						doc.append("items", {
@@ -1585,6 +1596,8 @@ class EcommerceBillImport(Document):
 					si.update_stock = 1
 					if i.customers_billing_state:
 						state=i.customers_billing_state
+						if not state_code_dict.get(str(state.lower())):
+							raise Exception(f"State name Is Wrong Please Check")
 						si.place_of_supply=state_code_dict.get(str(state.lower()))
 					si.company_address = company_address
 					si.ecommerce_gstin = ecommerce_gstin
@@ -1672,8 +1685,8 @@ class EcommerceBillImport(Document):
 					"is_return": 0,
 					"docstatus": 1
 				})
-				if not original_inv:
-					raise Exception("Original invoice not found or not submitted")
+				# if not original_inv:
+				# 	raise Exception("Original invoice not found or not submitted")
 
 				return_draft = frappe.db.get_value("Sales Invoice", {
 					"custom_inv_no": i.order_id,
@@ -1722,6 +1735,8 @@ class EcommerceBillImport(Document):
 				si.company_address = company_address
 				if i.customers_billing_state:
 					state=i.customers_billing_state
+					if not state_code_dict.get(str(state.lower())):
+						raise Exception(f"State name Is Wrong Please Check")
 					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				si.ecommerce_gstin = ecommerce_gstin
 				si.location = location
@@ -1861,6 +1876,8 @@ class EcommerceBillImport(Document):
 				si.custom_inv_no = i.order_item_id
 				if i.destination_address_state:
 					state=i.destination_address_state
+					if not state_code_dict.get(str(state.lower())):
+						raise Exception(f"State name Is Wrong Please Check")
 					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				si.taxes_and_charges = ""
 				si.custom_ecommerce_operator=self.ecommerce_mapping
@@ -1940,14 +1957,14 @@ class EcommerceBillImport(Document):
 
 
 				original_si_inv = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.cred_order_item_id, "is_return": 0, "docstatus": 1}, "name")
-				if not original_si_inv:
-					errors.append({
-						"idx": i.idx,
-						"invoice_id": i.cred_order_item_id,
-						"event": "Original Invoice Not Found",
-						"message": "Original Invoice Not  Found"
-					})
-					continue
+				# if not original_si_inv:
+				# 	errors.append({
+				# 		"idx": i.idx,
+				# 		"invoice_id": i.cred_order_item_id,
+				# 		"event": "Original Invoice Not Found",
+				# 		"message": "Original Invoice Not  Found"
+				# 	})
+				# 	continue
 				si_inv_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.cred_order_item_id, "is_return": 1, "docstatus": 0}, "name")
 
 				itemcode = next((jk.erp_item for jk in amazon.ecom_item_table if jk.ecom_item_id == i.get(str(amazon.ecom_sku_column_header))), None)
@@ -1984,6 +2001,8 @@ class EcommerceBillImport(Document):
 				si.set_posting_time = 1
 				if i.customer_state:
 					state=i.customer_state
+					if not state_code_dict.get(str(state.lower())):
+						raise Exception(f"State name Is Wrong Please Check")
 					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				si.posting_date = getdate(i.refund_date_time)
 				si.custom_ecommerce_operator=self.ecommerce_mapping
@@ -2165,6 +2184,8 @@ class EcommerceBillImport(Document):
 					si.custom_ecommerce_type=self.amazon_type
 					if i.customers_billing_state:
 						state=i.customers_billing_state
+						if not state_code_dict.get(str(state.lower())):
+							raise Exception(f"State name Is Wrong Please Check")
 						si.place_of_supply=state_code_dict.get(str(state.lower()))
 					si.taxes_and_charges = ""
 					si.update_stock = 1
@@ -2251,8 +2272,8 @@ class EcommerceBillImport(Document):
 					"is_return": 0,
 					"docstatus": 1
 				})
-				if not original_inv:
-					raise Exception("Original invoice not found or not submitted")
+				# if not original_inv:
+				# 	raise Exception("Original invoice not found or not submitted")
 
 				return_draft = frappe.db.get_value("Sales Invoice", {
 					"custom_inv_no": i.original_invoice_id,
@@ -2309,6 +2330,8 @@ class EcommerceBillImport(Document):
 				si.append("items", item_row)
 				if i.customers_billing_state:
 					state=i.customers_billing_state
+					if not state_code_dict.get(str(state.lower())):
+						raise Exception(f"State name Is Wrong Please Check")
 					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				for tax_type, rate,amount, acc_head in [
 						("CGST", i.cgst_rate,flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
