@@ -84,15 +84,15 @@ class EcommerceBillImport(Document):
 	@frappe.whitelist()
 	def create_invoice(self):
 		frappe.msgprint("Data Import Started")
-		# self.invoice_creation()
+		self.invoice_creation()
 		
-		job = frappe.enqueue(
-		self.invoice_creation,
-		queue='long',
-		timeout=10000
-		)
+		# job = frappe.enqueue(
+		# self.invoice_creation,
+		# queue='long',
+		# timeout=10000
+		# )
 
-		return job.id
+		# return job.id
 
 
 
@@ -699,6 +699,7 @@ class EcommerceBillImport(Document):
 									if child_row.ship_to_state:
 										state=child_row.ship_to_state
 										if not state_code_dict.get(str(state.lower())):
+											error_names.append(invoice_no)
 											raise Exception(f"State name Is Wrong Please Check")
 										si.place_of_supply=state_code_dict.get(str(state.lower()))
 
@@ -830,6 +831,7 @@ class EcommerceBillImport(Document):
 									if child_row.ship_to_state:
 										state=child_row.ship_to_state
 										if not state_code_dict.get(str(state.lower())):
+											error_names.append(invoice_no)
 											raise Exception(f"State name Is Wrong Please Check")
 										si.place_of_supply=state_code_dict.get(str(state.lower()))
 
@@ -1032,6 +1034,7 @@ class EcommerceBillImport(Document):
 							if child_row.ship_to_state:
 								state = child_row.ship_to_state
 								if not state_code_dict.get(str(state.lower())):
+									error_names.append(invoice_no)
 									raise Exception(f"State name Is Wrong Please Check")
 								si.place_of_supply = state_code_dict.get(str(state.lower()))
 							si.ecommerce_gstin = ecommerce_gstin
@@ -1159,6 +1162,7 @@ class EcommerceBillImport(Document):
 								None
 							)
 							if not itemcode:
+								si_error.append(invoice_no)
 								raise Exception(f"Item mapping not found for SKU: {child_row.get(amazon.ecom_sku_column_header)}")
 
 							warehouse, location, com_address = None, None, None
@@ -1186,6 +1190,7 @@ class EcommerceBillImport(Document):
 							if child_row.ship_to_state:
 								state = child_row.ship_to_state
 								if not state_code_dict.get(str(state.lower())):
+									si_error.append(invoice_no)
 									raise Exception(f"State name Is Wrong Please Check")
 								si_return.place_of_supply = state_code_dict.get(str(state.lower()))
 							si_return.ecommerce_gstin = ecommerce_gstin
