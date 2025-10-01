@@ -14,6 +14,7 @@ import io
 import json
 from datetime import datetime, timedelta
 
+from frappe.utils.data import get_time
 from frappe.utils.file_manager import get_file_path
 from frappe.utils import flt, getdate
 state_code_dict = {
@@ -651,6 +652,7 @@ class EcommerceBillImport(Document):
 							si.customer = customer
 							si.set_posting_time=1
 							si.posting_date = items_data[0][1].get("invoice_date")
+							si.posting_time=get_time(items_data[0][1].get("invoice_date"))
 							si.custom_inv_no = invoice_no
 							si.custom_ecommerce_invoice_id=invoice_no
 							si.__newname=invoice_no
@@ -795,6 +797,7 @@ class EcommerceBillImport(Document):
 						si_return.customer = customer
 						si_return.set_posting_time=1
 						si_return.posting_date = items_data[0][1].get("invoice_date")
+						si_return.posting_time=get_time(items_data[0][1].get("invoice_date"))
 						si_return.custom_ecommerce_invoice_id=refund_items[0][1].get("credit_note_no")
 						si_return.__newname = refund_items[0][1].get("credit_note_no")
 						si_return.custom_inv_no = invoice_no
@@ -974,6 +977,7 @@ class EcommerceBillImport(Document):
 						si.customer = val
 						si.set_posting_time=1
 						si.posting_date = items_data[0][1].get("invoice_date")
+						si.posting_time=get_time(items_data[0][1].get("invoice_date"))
 						si.custom_inv_no = invoice_no
 						si.custom_ecommerce_invoice_id = invoice_no
 						si.__newname = invoice_no
@@ -1127,6 +1131,7 @@ class EcommerceBillImport(Document):
 					si_return.set_posting_time=1
 
 					si_return.posting_date = items_data[0][1].get("invoice_date")
+					si_return.posting_time=get_time(items_data[0][1].get("invoice_date"))
 					si_return.custom_ecommerce_operator = self.ecommerce_mapping
 					si_return.custom_ecommerce_type = self.amazon_type
 					si_return.custom_inv_no = invoice_no
@@ -1325,6 +1330,7 @@ class EcommerceBillImport(Document):
 					doc.customer = customer
 					doc.set_posting_time=1
 					doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
+					doc.posting_time=get_time(group_rows[0][1].get("invoice_date"))
 					doc.custom_inv_no = invoice_no
 					doc.custom_ecommerce_operator = self.ecommerce_mapping
 					doc.custom_ecommerce_type = self.amazon_type
@@ -1397,6 +1403,7 @@ class EcommerceBillImport(Document):
 					pi_doc.supplier = ecommerce_mapping.inter_company_supplier
 					pi_doc.set_posting_time=1
 					pi_doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
+					pi_doc.posting_time=get_time(group_rows[0][1].get("invoice_date"))
 					pi_doc.custom_inv_no = invoice_no
 					pi_doc.customer = customer
 					pi_doc.custom_ecommerce_operator = self.ecommerce_mapping
@@ -1596,6 +1603,7 @@ class EcommerceBillImport(Document):
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = getdate(i.buyer_invoice_date)
+					si.posting_time=get_time(i.buyer_invoice_date)
 					si.custom_inv_no = i.order_id
 					si.custom_ecommerce_operator=self.ecommerce_mapping
 					si.custom_ecommerce_type=self.amazon_type
@@ -1734,6 +1742,7 @@ class EcommerceBillImport(Document):
 				si.customer = customer
 				si.set_posting_time = 1
 				si.posting_date = getdate(i.buyer_invoice_date)
+				si.posting_time=get_time(i.buyer_invoice_date)
 				si.custom_inv_no = i.order_id
 				si.custom_ecommerce_operator=self.ecommerce_mapping
 				si.custom_ecommerce_type=self.amazon_type
@@ -1880,6 +1889,7 @@ class EcommerceBillImport(Document):
 				si.customer = val
 				si.set_posting_time = 1
 				si.posting_date = getdate(i.order_date_time)
+				si.posting_time=get_time(i.order_date_time)
 				si.custom_inv_no = i.order_item_id
 				if i.destination_address_state:
 					state=i.destination_address_state
@@ -2012,6 +2022,7 @@ class EcommerceBillImport(Document):
 						raise Exception(f"State name Is Wrong Please Check")
 					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				si.posting_date = getdate(i.refund_date_time)
+				si.posting_time=get_time(i.refund_date_time)
 				si.custom_ecommerce_operator=self.ecommerce_mapping
 				si.custom_ecommerce_type=self.amazon_type
 				si.custom_inv_no = i.cred_order_item_id
@@ -2186,6 +2197,7 @@ class EcommerceBillImport(Document):
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = getdate(i.buyer_invoice_date)
+					si.posting_time=get_time(i.buyer_invoice_date)
 					si.custom_inv_no = i.original_invoice_id
 					si.custom_ecommerce_operator=self.ecommerce_mapping
 					si.custom_ecommerce_type=self.amazon_type
@@ -2322,6 +2334,7 @@ class EcommerceBillImport(Document):
 				si.customer = customer
 				si.set_posting_time = 1
 				si.posting_date = getdate(i.buyer_invoice_date)
+				si.posting_time=get_time(i.buyer_invoice_date)
 				si.custom_inv_no = i.original_invoice_id
 				si.custom_ecommerce_operator=self.ecommerce_mapping
 				si.custom_ecommerce_type=self.amazon_type
