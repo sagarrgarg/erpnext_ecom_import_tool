@@ -83,15 +83,15 @@ class EcommerceBillImport(Document):
 	@frappe.whitelist()
 	def create_invoice(self):
 		frappe.msgprint("Data Import Started")
-		# self.invoice_creation()
+		self.invoice_creation()
 		
-		job = frappe.enqueue(
-		self.invoice_creation,
-		queue='long',
-		timeout=10000
-		)
+		# job = frappe.enqueue(
+		# self.invoice_creation,
+		# queue='long',
+		# timeout=10000
+		# )
 
-		return job.id
+		# return job.id
 
 
 
@@ -649,6 +649,7 @@ class EcommerceBillImport(Document):
 						else:
 							si = frappe.new_doc("Sales Invoice")
 							si.customer = customer
+							si.set_posting_time=1
 							si.posting_date = items_data[0][1].get("invoice_date")
 							si.custom_inv_no = invoice_no
 							si.custom_ecommerce_invoice_id=invoice_no
@@ -792,6 +793,7 @@ class EcommerceBillImport(Document):
 						si_return.custom_ecommerce_operator=self.ecommerce_mapping
 						si_return.custom_ecommerce_type=self.amazon_type
 						si_return.customer = customer
+						si_return.set_posting_time=1
 						si_return.posting_date = items_data[0][1].get("invoice_date")
 						si_return.custom_ecommerce_invoice_id=refund_items[0][1].get("credit_note_no")
 						si_return.__newname = refund_items[0][1].get("credit_note_no")
@@ -970,6 +972,7 @@ class EcommerceBillImport(Document):
 					else:
 						si = frappe.new_doc("Sales Invoice")
 						si.customer = val
+						si.set_posting_time=1
 						si.posting_date = items_data[0][1].get("invoice_date")
 						si.custom_inv_no = invoice_no
 						si.custom_ecommerce_invoice_id = invoice_no
@@ -1121,6 +1124,8 @@ class EcommerceBillImport(Document):
 					si_return.is_return = 1
 					si_return.return_against = existing_si
 					si_return.customer = val
+					si_return.set_posting_time=1
+
 					si_return.posting_date = items_data[0][1].get("invoice_date")
 					si_return.custom_ecommerce_operator = self.ecommerce_mapping
 					si_return.custom_ecommerce_type = self.amazon_type
@@ -1318,6 +1323,7 @@ class EcommerceBillImport(Document):
 				if not existing_name:
 					doc = frappe.new_doc(doctype)
 					doc.customer = customer
+					doc.set_posting_time=1
 					doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
 					doc.custom_inv_no = invoice_no
 					doc.custom_ecommerce_operator = self.ecommerce_mapping
@@ -1389,6 +1395,7 @@ class EcommerceBillImport(Document):
 				if not existing_name_purchase:
 					pi_doc = frappe.new_doc("Purchase Invoice" if is_taxable else "Purchase Receipt")
 					pi_doc.supplier = ecommerce_mapping.inter_company_supplier
+					pi_doc.set_posting_time=1
 					pi_doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
 					pi_doc.custom_inv_no = invoice_no
 					pi_doc.customer = customer
