@@ -84,15 +84,15 @@ class EcommerceBillImport(Document):
 	@frappe.whitelist()
 	def create_invoice(self):
 		frappe.msgprint("Data Import Started")
-		self.invoice_creation()
+		# self.invoice_creation()
 		
-		# job = frappe.enqueue(
-		# self.invoice_creation,
-		# queue='long',
-		# timeout=10000
-		# )
+		job = frappe.enqueue(
+		self.invoice_creation,
+		queue='long',
+		timeout=10000
+		)
 
-		# return job.id
+		return job.id
 
 
 
