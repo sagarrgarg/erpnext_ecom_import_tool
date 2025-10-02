@@ -328,6 +328,7 @@ class EcommerceBillImport(Document):
 					# If the field exists on the child table, set it
 					if fieldname in [d.fieldname for d in frappe.get_meta('Amazon Stock Transfer').fields]:
 						child_row.set(fieldname, clean(value))
+						print("fieldname5667e787e8e89",value)
 					child_row.set("hsnsac", clean(clean(row.get('Hsn/sac'))))
 
 			if self.stock_transfer:
@@ -801,10 +802,8 @@ class EcommerceBillImport(Document):
 						si_return.customer = customer
 						si_return.set_posting_time=1
 						# Parse the datetime and add 1 minute for returns
-						invoice_datetime = datetime.strptime(str(items_data[0][1].get("invoice_date")), '%Y-%m-%d %H:%M:%S') if isinstance(items_data[0][1].get("invoice_date"), str) else items_data[0][1].get("invoice_date")
-						invoice_datetime_plus_1min = invoice_datetime + timedelta(minutes=1)
-						si_return.posting_date = invoice_datetime_plus_1min.date()
-						si_return.posting_time = invoice_datetime_plus_1min.time()
+						si.posting_date = getdate(items_data[0][1].get("credit_note_date"))
+						si.posting_time = get_time(items_data[0][1].get("credit_note_date"))
 						si_return.custom_ecommerce_invoice_id=refund_items[0][1].get("credit_note_no")
 						si_return.__newname = refund_items[0][1].get("credit_note_no")
 						si_return.custom_inv_no = invoice_no
@@ -1143,10 +1142,8 @@ class EcommerceBillImport(Document):
 					si_return.set_posting_time=1
 
 					# Parse the datetime and add 1 minute for returns
-					invoice_datetime = datetime.strptime(str(items_data[0][1].get("invoice_date")), '%Y-%m-%d %H:%M:%S') if isinstance(items_data[0][1].get("invoice_date"), str) else items_data[0][1].get("invoice_date")
-					invoice_datetime_plus_1min = invoice_datetime + timedelta(minutes=1)
-					si_return.posting_date = invoice_datetime_plus_1min.date()
-					si_return.posting_time = invoice_datetime_plus_1min.time()
+					si.posting_date = getdate(items_data[0][1].get("credit_note_date"))
+					si.posting_time = get_time(items_data[0][1].get("credit_note_date"))
 					si_return.custom_ecommerce_operator = self.ecommerce_mapping
 					si_return.custom_ecommerce_type = self.amazon_type
 					si_return.custom_inv_no = invoice_no
