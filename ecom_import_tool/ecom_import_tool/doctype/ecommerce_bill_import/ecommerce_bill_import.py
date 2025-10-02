@@ -84,15 +84,15 @@ class EcommerceBillImport(Document):
 	@frappe.whitelist()
 	def create_invoice(self):
 		frappe.msgprint("Data Import Started")
-		# self.invoice_creation()
+		self.invoice_creation()
 		
-		job = frappe.enqueue(
-		self.invoice_creation,
-		queue='long',
-		timeout=10000
-		)
+		# job = frappe.enqueue(
+		# self.invoice_creation,
+		# queue='long',
+		# timeout=10000
+		# )
 
-		return job.id
+		# return job.id
 
 
 
@@ -1626,7 +1626,7 @@ class EcommerceBillImport(Document):
 					# buyer_invoice_datetime = datetime.strptime(str(i.buyer_invoice_date), '%Y-%m-%d %H:%M:%S') if isinstance(i.buyer_invoice_date, str) else i.buyer_invoice_date
 					# buyer_invoice_datetime_plus_2 = buyer_invoice_datetime + timedelta(seconds=2)
 					si.posting_date = getdate(i.buyer_invoice_date)
-					si.posting_time = get_time(i.buyer_invoice_date)
+					# si.posting_time = get_time(i.buyer_invoice_date)
 					si.custom_inv_no = i.order_id
 					si.custom_ecommerce_operator=self.ecommerce_mapping
 					si.custom_ecommerce_type=self.amazon_type
@@ -1765,10 +1765,10 @@ class EcommerceBillImport(Document):
 				si.customer = customer
 				si.set_posting_time = 1
 				# Parse the datetime and add 1 minute for returns
-				buyer_invoice_datetime = datetime.strptime(str(i.buyer_invoice_date), '%Y-%m-%d %H:%M:%S') if isinstance(i.buyer_invoice_date, str) else i.buyer_invoice_date
-				buyer_invoice_datetime_plus_1min = buyer_invoice_datetime + timedelta(minutes=1)
-				si.posting_date = buyer_invoice_datetime_plus_1min.date()
-				si.posting_time = buyer_invoice_datetime_plus_1min.time()
+				# buyer_invoice_datetime = datetime.strptime(str(i.buyer_invoice_date), '%Y-%m-%d %H:%M:%S') if isinstance(i.buyer_invoice_date, str) else i.buyer_invoice_date
+				# buyer_invoice_datetime_plus_1min = buyer_invoice_datetime + timedelta(minutes=1)
+				si.posting_date = getdate(i.buyer_invoice_date)
+				# si.posting_time = buyer_invoice_datetime_plus_1min.time()
 				si.custom_inv_no = i.order_id
 				si.custom_ecommerce_operator=self.ecommerce_mapping
 				si.custom_ecommerce_type=self.amazon_type
@@ -1918,7 +1918,7 @@ class EcommerceBillImport(Document):
 				# order_datetime = datetime.strptime(str(i.order_date_time), '%Y-%m-%d %H:%M:%S') if isinstance(i.order_date_time, str) else i.order_date_time
 				# order_datetime_plus_2 = order_datetime + timedelta(seconds=2)
 				si.posting_date = getdate(i.order_date_time)
-				si.posting_time = get_time(i.order_date_time)
+				# si.posting_time = get_time(i.order_date_time)
 				si.custom_inv_no = i.order_item_id
 				if i.destination_address_state:
 					state=i.destination_address_state
@@ -2051,10 +2051,10 @@ class EcommerceBillImport(Document):
 						raise Exception(f"State name Is Wrong Please Check")
 					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				# Parse the datetime and add 1 minute for returns
-				refund_datetime = datetime.strptime(str(i.refund_date_time), '%Y-%m-%d %H:%M:%S') if isinstance(i.refund_date_time, str) else i.refund_date_time
-				refund_datetime_plus_1min = refund_datetime + timedelta(minutes=1)
-				si.posting_date = refund_datetime_plus_1min.date()
-				si.posting_time = refund_datetime_plus_1min.time()
+				# refund_datetime = datetime.strptime(str(i.refund_date_time), '%Y-%m-%d %H:%M:%S') if isinstance(i.refund_date_time, str) else i.refund_date_time
+				# refund_datetime_plus_1min = refund_datetime + timedelta(minutes=1)
+				si.posting_date = getdate(i.refund_date_time)
+				# si.posting_time = refund_datetime_plus_1min.time()
 				si.custom_ecommerce_operator=self.ecommerce_mapping
 				si.custom_ecommerce_type=self.amazon_type
 				si.custom_inv_no = i.cred_order_item_id
@@ -2232,7 +2232,7 @@ class EcommerceBillImport(Document):
 					# buyer_invoice_datetime = datetime.strptime(str(i.buyer_invoice_date), '%Y-%m-%d %H:%M:%S') if isinstance(i.buyer_invoice_date, str) else i.buyer_invoice_date
 					# buyer_invoice_datetime_plus_2 = buyer_invoice_datetime + timedelta(seconds=2)
 					si.posting_date = getdate(i.buyer_invoice_date)
-					si.posting_time = get_time(i.buyer_invoice_date)
+					# si.posting_time = get_time(i.buyer_invoice_date)
 					si.custom_inv_no = i.original_invoice_id
 					si.custom_ecommerce_operator=self.ecommerce_mapping
 					si.custom_ecommerce_type=self.amazon_type
@@ -2369,10 +2369,7 @@ class EcommerceBillImport(Document):
 				si.customer = customer
 				si.set_posting_time = 1
 				# Parse the datetime and add 1 minute for returns
-				buyer_invoice_datetime = datetime.strptime(str(i.buyer_invoice_date), '%Y-%m-%d %H:%M:%S') if isinstance(i.buyer_invoice_date, str) else i.buyer_invoice_date
-				buyer_invoice_datetime_plus_1min = buyer_invoice_datetime + timedelta(minutes=1)
-				si.posting_date = buyer_invoice_datetime_plus_1min.date()
-				si.posting_time = buyer_invoice_datetime_plus_1min.time()
+				si.posting_date = getdate(i.buyer_invoice_date)
 				si.custom_inv_no = i.original_invoice_id
 				si.custom_ecommerce_operator=self.ecommerce_mapping
 				si.custom_ecommerce_type=self.amazon_type
