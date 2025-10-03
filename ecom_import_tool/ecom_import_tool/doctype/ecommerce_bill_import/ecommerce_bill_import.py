@@ -19,6 +19,7 @@ from frappe.utils.file_manager import get_file_path
 from frappe.utils import flt, getdate
 state_code_dict = {
 	"jammu and kashmir": "01-Jammu and Kashmir",
+	"jammu & kashmir": "01-Jammu and Kashmir",
 	"himachal pradesh": "02-Himachal Pradesh",
 	"punjab": "03-Punjab",
 	"chandigarh": "04-Chandigarh",
@@ -63,19 +64,20 @@ class EcommerceBillImport(Document):
 			frappe.throw(_("Please select an Ecommerce Mapping"))
 
 	def before_save(self):
-		if self.ecommerce_mapping=="Amazon":
-			if self.amazon_type=="MTR B2B":
-				self.show_preview()
-			elif self.amazon_type=="MTR B2C":
-				self.append_mtr_b2c()
-			else:
-				self.append_stock_transfer_attachment()
-		if self.ecommerce_mapping=="CRED":
-			self.cred_append()
-		if self.ecommerce_mapping=="Flipkart":
-			self.append_flipkart()
-		if self.ecommerce_mapping=="Jiomart":
-			self.append_jio_mart()
+		if self.get("__islocal"):
+			if self.ecommerce_mapping=="Amazon":
+				if self.amazon_type=="MTR B2B":
+					self.show_preview()
+				elif self.amazon_type=="MTR B2C":
+					self.append_mtr_b2c()
+				else:
+					self.append_stock_transfer_attachment()
+			if self.ecommerce_mapping=="CRED":
+				self.cred_append()
+			if self.ecommerce_mapping=="Flipkart":
+				self.append_flipkart()
+			if self.ecommerce_mapping=="Jiomart":
+				self.append_jio_mart()
 
 
 	
@@ -84,15 +86,15 @@ class EcommerceBillImport(Document):
 	@frappe.whitelist()
 	def create_invoice(self):
 		frappe.msgprint("Data Import Started")
-		self.invoice_creation()
+		# self.invoice_creation()
 		
-		# job = frappe.enqueue(
-		# self.invoice_creation,
-		# queue='long',
-		# timeout=10000
-		# )
+		job = frappe.enqueue(
+		self.invoice_creation,
+		queue='long',
+		timeout=10000
+		)
 
-		# return job.id
+		return job.id
 
 
 
@@ -802,8 +804,8 @@ class EcommerceBillImport(Document):
 						si_return.customer = customer
 						si_return.set_posting_time=1
 						# Parse the datetime and add 1 minute for returns
-						si.posting_date = getdate(items_data[0][1].get("credit_note_date"))
-						si.posting_time = get_time(items_data[0][1].get("credit_note_date"))
+						si.posting_date = getdate(refund_items[0][1].get("credit_note_date"))
+						si.posting_time = get_time(refund_items[0][1].get("credit_note_date"))
 						si_return.custom_ecommerce_invoice_id=refund_items[0][1].get("credit_note_no")
 						si_return.__newname = refund_items[0][1].get("credit_note_no")
 						si_return.custom_inv_no = invoice_no
@@ -1142,8 +1144,8 @@ class EcommerceBillImport(Document):
 					si_return.set_posting_time=1
 
 					# Parse the datetime and add 1 minute for returns
-					si.posting_date = getdate(items_data[0][1].get("credit_note_date"))
-					si.posting_time = get_time(items_data[0][1].get("credit_note_date"))
+					si.posting_date = getdate(refund_items[0][1].get("credit_note_date"))
+					si.posting_time = get_time(refund_items[0][1].get("credit_note_date"))
 					si_return.custom_ecommerce_operator = self.ecommerce_mapping
 					si_return.custom_ecommerce_type = self.amazon_type
 					si_return.custom_inv_no = invoice_no
@@ -1344,10 +1346,10 @@ class EcommerceBillImport(Document):
 					doc.customer = customer
 					doc.set_posting_time=1
 					# Parse the datetime and add 2 seconds
-					invoice_datetime = datetime.strptime(str(group_rows[0][1].get("invoice_date")), '%Y-%m-%d %H:%M:%S') if isinstance(group_rows[0][1].get("invoice_date"), str) else group_rows[0][1].get("invoice_date")
-					invoice_datetime_plus_2 = invoice_datetime + timedelta(seconds=2)
-					doc.posting_date = invoice_datetime_plus_2.date()
-					doc.posting_time = invoice_datetime_plus_2.time()
+					# invoice_datetime = datetime.strptime(str(group_rows[0][1].get("invoice_date")), '%Y-%m-%d %H:%M:%S') if isinstance(group_rows[0][1].get("invoice_date"), str) else group_rows[0][1].get("invoice_date")
+					# invoice_datetime_plus_2 = invoice_datetime + timedelta(seconds=2)
+					doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
+					doc.posting_time = get_time(group_rows[0][1].get("invoice_date"))
 					doc.custom_inv_no = invoice_no
 					doc.custom_ecommerce_operator = self.ecommerce_mapping
 					doc.custom_ecommerce_type = self.amazon_type
@@ -1420,10 +1422,10 @@ class EcommerceBillImport(Document):
 					pi_doc.supplier = ecommerce_mapping.inter_company_supplier
 					pi_doc.set_posting_time=1
 					# Parse the datetime and add 2 seconds
-					invoice_datetime = datetime.strptime(str(group_rows[0][1].get("invoice_date")), '%Y-%m-%d %H:%M:%S') if isinstance(group_rows[0][1].get("invoice_date"), str) else group_rows[0][1].get("invoice_date")
-					invoice_datetime_plus_2 = invoice_datetime + timedelta(seconds=2)
-					pi_doc.posting_date = invoice_datetime_plus_2.date()
-					pi_doc.posting_time = invoice_datetime_plus_2.time()
+					# invoice_datetime = datetime.strptime(str(group_rows[0][1].get("invoice_date")), '%Y-%m-%d %H:%M:%S') if isinstance(group_rows[0][1].get("invoice_date"), str) else group_rows[0][1].get("invoice_date")
+					# invoice_datetime_plus_2 = invoice_datetime + timedelta(seconds=2)
+					pi_doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
+					pi_doc.posting_time = get_time(group_rows[0][1].get("invoice_date"))
 					pi_doc.custom_inv_no = invoice_no
 					pi_doc.customer = customer
 					pi_doc.custom_ecommerce_operator = self.ecommerce_mapping
