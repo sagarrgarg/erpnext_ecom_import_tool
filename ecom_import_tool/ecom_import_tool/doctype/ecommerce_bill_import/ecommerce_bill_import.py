@@ -719,7 +719,8 @@ class EcommerceBillImport(Document):
 									"tax_rate": flt(child_row.total_tax_amount),
 									"margin_type": "Amount" if flt(child_row.item_promo_discount) > 0 else None,
 									"margin_rate_or_amount": flt(child_row.item_promo_discount),
-									"income_account": amazon.income_account
+									"income_account": amazon.income_account,
+									"is_free_item": 1 if str(child_row.transaction_type) == "FreeReplacement" else 0
 								})
 								items_append.append(itemcode)
 								for tax_type,rate, amount, acc_head in [
@@ -804,8 +805,8 @@ class EcommerceBillImport(Document):
 						si_return.customer = customer
 						si_return.set_posting_time=1
 						# Parse the datetime and add 1 minute for returns
-						si.posting_date = getdate(refund_items[0][1].get("credit_note_date"))
-						si.posting_time = get_time(refund_items[0][1].get("credit_note_date"))
+						si_return.posting_date = getdate(refund_items[0][1].get("credit_note_date"))
+						si_return.posting_time = get_time(refund_items[0][1].get("credit_note_date"))
 						si_return.custom_ecommerce_invoice_id=refund_items[0][1].get("credit_note_no")
 						si_return.__newname = refund_items[0][1].get("credit_note_no")
 						si_return.custom_inv_no = invoice_no
@@ -840,7 +841,7 @@ class EcommerceBillImport(Document):
 										if not state_code_dict.get(str(state.lower())):
 											error_names.append(invoice_no)
 											raise Exception(f"State name Is Wrong Please Check")
-										si.place_of_supply=state_code_dict.get(str(state.lower()))
+										si_return.place_of_supply=state_code_dict.get(str(state.lower()))
 
 								if not si_return.location:
 									si_return.location = location
@@ -1062,6 +1063,7 @@ class EcommerceBillImport(Document):
 								"margin_type": "Amount" if flt(child_row.item_promo_discount) > 0 else None,
 								"margin_rate_or_amount": flt(child_row.item_promo_discount),
 								"income_account": amazon.income_account,
+								"is_free_item": 1 if str(child_row.transaction_type) == "FreeReplacement" else 0
 							})
 							items_append.append(itemcode)
 
@@ -1144,8 +1146,8 @@ class EcommerceBillImport(Document):
 					si_return.set_posting_time=1
 
 					# Parse the datetime and add 1 minute for returns
-					si.posting_date = getdate(refund_items[0][1].get("credit_note_date"))
-					si.posting_time = get_time(refund_items[0][1].get("credit_note_date"))
+					si_return.posting_date = getdate(refund_items[0][1].get("credit_note_date"))
+					si_return.posting_time = get_time(refund_items[0][1].get("credit_note_date"))
 					si_return.custom_ecommerce_operator = self.ecommerce_mapping
 					si_return.custom_ecommerce_type = self.amazon_type
 					si_return.custom_inv_no = invoice_no
