@@ -1138,7 +1138,7 @@ class EcommerceBillImport(Document):
 					# 		"message": f"Refund requested but original submitted invoice not found for {invoice_no}."
 					# 	})
 					# 	continue
-
+					ritems_append = []
 					si_return = frappe.new_doc("Sales Invoice")
 					si_return.is_return = 1
 					si_return.return_against = existing_si
@@ -1222,6 +1222,7 @@ class EcommerceBillImport(Document):
 								"margin_rate_or_amount": flt(child_row.item_promo_discount),
 								"custom_ecom_item_id": child_row.shipment_item_id
 							})
+							ritems_append.append(itemcode)
 
 							for tax_type, rate, amount, acc_head in [
 								("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
@@ -1249,15 +1250,16 @@ class EcommerceBillImport(Document):
 							})
 
 					try:
-						si_return.save(ignore_permissions=True)
-						for j in si_return.items:
-							j.item_tax_template = ""
-							j.item_tax_rate = frappe._dict()
-						si_return.save(ignore_permissions=True)
+						if len(ritems_append)>0:
+							si_return.save(ignore_permissions=True)
+							for j in si_return.items:
+								j.item_tax_template = ""
+								j.item_tax_rate = frappe._dict()
+							si_return.save(ignore_permissions=True)
 
-						if invoice_no not in si_error:
-							si_return.submit()
-							success_count += len(refund_items)
+							if invoice_no not in si_error:
+								si_return.submit()
+								success_count += len(refund_items)
 					except Exception as submit_error:
 						for idx, _ in refund_items:
 							errors.append({
