@@ -736,7 +736,7 @@ class EcommerceBillImport(Document):
 												si.append("taxes", {
 													"charge_type": "On Net Total",
 													"account_head": acc_head,
-													"rate":rate*100,
+													"rate":rate,
 													"tax_amount": amount,
 													"description": tax_type
 												})
@@ -877,7 +877,7 @@ class EcommerceBillImport(Document):
 												si_return.append("taxes", {
 													"charge_type": "On Net Total",
 													"account_head": acc_head,
-													"rate":rate*100,
+													"rate":rate,
 													"tax_amount": amount,
 													"description": tax_type
 												})
@@ -1665,7 +1665,7 @@ class EcommerceBillImport(Document):
 							else:
 								si.append("taxes", {
 									"charge_type": "On Net Total",
-									"rate":rate*100,
+									"rate":rate,
 									"account_head": acc_head,
 									"tax_amount": amount,
 									"description": tax_type
@@ -1809,7 +1809,7 @@ class EcommerceBillImport(Document):
 							else:
 								si.append("taxes", {
 									"charge_type": "On Net Total",
-									"rate":rate*100,
+									"rate":rate,
 									"account_head": acc_head,
 									"tax_amount": amount,
 									"description": tax_type
