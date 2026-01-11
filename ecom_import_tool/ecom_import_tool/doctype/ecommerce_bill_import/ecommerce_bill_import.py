@@ -26,6 +26,25 @@ def normalize_state_key(state):
     key = key.replace("&", "and")    # optional, helps for "&" cases
     return key
 
+
+def normalize_warehouse_id(warehouse_id):
+    """Normalize external warehouse id.
+
+    Returns an empty string for blank/NA values so callers can treat it as missing.
+    """
+    if warehouse_id is None:
+        return ""
+
+    warehouse_id_str = str(warehouse_id).strip()
+    if not warehouse_id_str:
+        return ""
+
+    warehouse_id_lower = warehouse_id_str.lower()
+    if warehouse_id_lower in {"na", "n/a", "nan", "none", "null", "-", "0", "0.0"}:
+        return ""
+
+    return warehouse_id_str
+
 state_code_dict = {
     "jammu and kashmir": "01-Jammu and Kashmir",
     "jammu & kashmir": "01-Jammu and Kashmir",
@@ -1045,15 +1064,21 @@ class EcommerceBillImport(Document):
 
 							# ---- Warehouse mapping ----
 							warehouse, location, com_address = None, None, None
+							warehouse_id = normalize_warehouse_id(child_row.warehouse_id)
 							for wh_map in amazon.ecommerce_warehouse_mapping:
-								if wh_map.ecom_warehouse_id == child_row.warehouse_id:
+								if wh_map.ecom_warehouse_id == warehouse_id:
 									warehouse = wh_map.erp_warehouse
 									location = wh_map.location
 									com_address = wh_map.erp_address
 									break
 							if not warehouse:
-								warehouse_mapping_missing = True
-								raise Exception(f"Warehouse Mapping not found for Warehouse Id: {child_row.warehouse_id}")
+								if not warehouse_id:
+									warehouse = amazon.default_company_warehouse
+									location = amazon.default_company_location
+									com_address = amazon.default_company_address
+								else:
+									warehouse_mapping_missing = True
+									raise Exception(f"Warehouse Mapping not found for Warehouse Id: {warehouse_id}")
 
 							# ---- GSTIN Mapping ----
 							ecommerce_gstin = None
@@ -1203,15 +1228,21 @@ class EcommerceBillImport(Document):
 								raise Exception(f"Item mapping not found for SKU: {child_row.get(amazon.ecom_sku_column_header)}")
 
 							warehouse, location, com_address = None, None, None
+							warehouse_id = normalize_warehouse_id(child_row.warehouse_id)
 							for wh_map in amazon.ecommerce_warehouse_mapping:
-								if wh_map.ecom_warehouse_id == child_row.warehouse_id:
+								if wh_map.ecom_warehouse_id == warehouse_id:
 									warehouse = wh_map.erp_warehouse
 									location = wh_map.location
 									com_address = wh_map.erp_address
 									break
 							if not warehouse:
-								warehouse_mapping_missing = True
-								raise Exception(f"Warehouse Mapping not found for Warehouse Id: {child_row.warehouse_id}")
+								if not warehouse_id:
+									warehouse = amazon.default_company_warehouse
+									location = amazon.default_company_location
+									com_address = amazon.default_company_address
+								else:
+									warehouse_mapping_missing = True
+									raise Exception(f"Warehouse Mapping not found for Warehouse Id: {warehouse_id}")
 
 							ecommerce_gstin = None
 							for gstin in amazon.ecommerce_gstin_mapping:
@@ -1576,6 +1607,9 @@ class EcommerceBillImport(Document):
 			return None
 
 		def get_warehouse_info(warehouse_id):
+			warehouse_id = normalize_warehouse_id(warehouse_id)
+			if not warehouse_id:
+				return flipkart.default_company_warehouse, flipkart.default_company_location, flipkart.default_company_address
 			for wh in flipkart.ecommerce_warehouse_mapping:
 				if wh.ecom_warehouse_id == warehouse_id:
 					return wh.erp_warehouse, wh.location, wh.erp_address
@@ -1588,129 +1622,182 @@ class EcommerceBillImport(Document):
 			return None
 
 		# ---------- SALES ----------
-		for i in self.flipkart_items:
+		sale_groups = {}
+		for row in self.flipkart_items:
+			if row.event_sub_type != "Sale":
+				continue
+
+			invoice_key = row.order_id
+			if not invoice_key:
+				errors.append({
+					"idx": row.idx,
+					"invoice_id": row.buyer_invoice_id,
+					"event": row.event_sub_type,
+					"message": "Missing Order ID (order_id) for Sale row"
+				})
+				continue
+
+			sale_groups.setdefault(invoice_key, []).append(row)
+
+		for invoice_key, rows in sale_groups.items():
+			group_errors = False
+			items_appended = 0
+
 			try:
-				if i.event_sub_type != "Sale":
-					continue
-
-				# Skip if order_item_id already exists in submitted Sales Invoice Item
-				exists_in_item = frappe.db.sql("""
-					SELECT sii.name FROM `tabSales Invoice Item` sii
-					JOIN `tabSales Invoice` si ON sii.parent = si.name
-					WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
-				""", i.order_item_id)
-				if exists_in_item:
-					continue
-
 				existing = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.order_id,
+					"custom_inv_no": invoice_key,
 					"is_return": 0,
 					"docstatus": 1
-				})
+				}, "name")
 				if existing:
 					continue
 
-				draft = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.order_id,
+				draft_name = frappe.db.get_value("Sales Invoice", {
+					"custom_inv_no": invoice_key,
 					"is_return": 0,
 					"docstatus": 0
-				})
-				if draft:
-					if exists_in_item:
-						si_invoice.append(draft)
-						continue
+				}, "name")
+
+				if draft_name:
+					si = frappe.get_doc("Sales Invoice", draft_name)
 				else:
-					if exists_in_item:
-						continue
+					first = rows[0]
+					warehouse, location, company_address = get_warehouse_info(first.warehouse_id)
+					ecommerce_gstin = get_gstin(first.seller_gstin)
 
-				item_code = get_item_code(i.get(flipkart.ecom_sku_column_header))
-				if not item_code:
-					raise Exception(f"Item mapping not found for SKU: {i.get(flipkart.ecom_sku_column_header)}")
-
-				warehouse, location, company_address = get_warehouse_info(i.warehouse_id)
-				ecommerce_gstin = get_gstin(i.seller_gstin)
-				item_name = frappe.db.get_value("Item", item_code, "item_name")
-				hsn_code=frappe.db.get_value("Item",item_code,"gst_hsn_code")
-				print("###################################",i.order_id,flt(i.price_before_discount)/flt(i.item_quantity))
-				item_row = {
-					"item_code": item_code,
-					"item_name": item_name,
-					"qty": flt(i.item_quantity),
-					"rate": flt(i.taxable_value)/flt(i.item_quantity),
-					"price_list_rate":flt(i.taxable_value)/flt(i.item_quantity),
-					"gst_hsn_code": hsn_code,
-					"description": i.product_titledescription,
-					"warehouse": warehouse,
-					"income_account": flipkart.income_account,
-					"custom_ecom_item_id": i.order_item_id
-				}
-
-				
-
-				if not draft:
 					si = frappe.new_doc("Sales Invoice")
 					si.customer = customer
 					si.set_posting_time = 1
-					# Parse the datetime and add 2 seconds
-					# buyer_invoice_datetime = datetime.strptime(str(i.buyer_invoice_date), '%Y-%m-%d %H:%M:%S') if isinstance(i.buyer_invoice_date, str) else i.buyer_invoice_date
-					# buyer_invoice_datetime_plus_2 = buyer_invoice_datetime + timedelta(seconds=2)
-					si.posting_date = getdate(i.buyer_invoice_date)
-					# si.posting_time = get_time(i.buyer_invoice_date)
-					si.custom_inv_no = i.order_id
-					si.custom_ecommerce_operator=self.ecommerce_mapping
-					si.custom_ecommerce_type=self.amazon_type
+					si.posting_date = getdate(first.buyer_invoice_date)
+					si.custom_inv_no = invoice_key
+					si.custom_ecommerce_operator = self.ecommerce_mapping
+					si.custom_ecommerce_type = self.amazon_type
 					si.taxes_and_charges = ""
 					si.update_stock = 1
-					if i.customers_billing_state:
-						state=i.customers_billing_state
-						if not state_code_dict.get(str(state.lower())):
-							raise Exception(f"State name Is Wrong Please Check")
-						si.place_of_supply=state_code_dict.get(str(state.lower()))
+
+					if first.customers_billing_state:
+						state = first.customers_billing_state
+						if not state_code_dict.get(str(state).lower()):
+							raise Exception("State name Is Wrong Please Check")
+						si.place_of_supply = state_code_dict.get(str(state).lower())
+
 					si.company_address = company_address
 					si.ecommerce_gstin = ecommerce_gstin
-					# if flt(i.cgst_amount)>0:
-					# 	si.customer_address=customer_address_in_state
-					# elif flt(i.igst_amount)>0:
-					# 	si.customer_address=customer_address_out_state
 					si.location = location
-					si.append("items", item_row)
-					si.custom_ecommerce_invoice_id=i.buyer_invoice_id
-					si.__newname=i.buyer_invoice_id
-					for tax_type,rate, amount, acc_head in [
-						("CGST",flt(i.cgst_rate), flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
-						("SGST", flt(i.sgst_rate),flt(i.sgst_amount), "Output Tax SGST - KGOPL"),
-						("IGST", flt(i.igst_rate),flt(i.igst_amount), "Output Tax IGST - KGOPL")
-					]:
-						if amount:
-							existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-							if existing_tax:
-								existing_tax.tax_amount += amount
-							else:
-								si.append("taxes", {
-									"charge_type": "On Net Total",
-									"rate":rate,
-									"account_head": acc_head,
-									"tax_amount": amount,
-									"description": tax_type
-								})
+					si.custom_ecommerce_invoice_id = first.buyer_invoice_id
+					si.__newname = first.buyer_invoice_id
 
+				existing_item_ids = {
+					d.get("custom_ecom_item_id")
+					for d in (si.get("items") or [])
+					if d.get("custom_ecom_item_id")
+				}
+
+				for row in rows:
+					try:
+						if row.order_item_id in existing_item_ids:
+							continue
+
+						# Skip if order_item_id already exists in non-submitted Sales Invoice Item
+						exists_in_item = frappe.db.sql("""
+							SELECT sii.name FROM `tabSales Invoice Item` sii
+							JOIN `tabSales Invoice` si ON sii.parent = si.name
+							WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
+						""", row.order_item_id)
+						if exists_in_item:
+							continue
+
+						item_code = get_item_code(row.get(flipkart.ecom_sku_column_header))
+						if not item_code:
+							raise Exception(f"Item mapping not found for SKU: {row.get(flipkart.ecom_sku_column_header)}")
+
+						warehouse, location, company_address = get_warehouse_info(row.warehouse_id)
+						ecommerce_gstin = get_gstin(row.seller_gstin)
+
+						# Fill missing headers (draft invoices)
+						if not si.company_address:
+							si.company_address = company_address
+						if not si.location:
+							si.location = location
+						if not si.ecommerce_gstin:
+							si.ecommerce_gstin = ecommerce_gstin
+						if not si.place_of_supply and row.customers_billing_state:
+							state = row.customers_billing_state
+							if not state_code_dict.get(str(state).lower()):
+								raise Exception("State name Is Wrong Please Check")
+							si.place_of_supply = state_code_dict.get(str(state).lower())
+						if not si.custom_ecommerce_invoice_id and row.buyer_invoice_id:
+							si.custom_ecommerce_invoice_id = row.buyer_invoice_id
+							si.__newname = row.buyer_invoice_id
+
+						item_name = frappe.db.get_value("Item", item_code, "item_name")
+						hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code")
+
+						qty = flt(row.item_quantity)
+						rate = (flt(row.taxable_value) / qty) if qty else 0
+
+						item_row = {
+							"item_code": item_code,
+							"item_name": item_name,
+							"qty": qty,
+							"rate": rate,
+							"price_list_rate": rate,
+							"gst_hsn_code": hsn_code,
+							"description": row.product_titledescription,
+							"warehouse": warehouse,
+							"income_account": flipkart.income_account,
+							"custom_ecom_item_id": row.order_item_id
+						}
+
+						si.append("items", item_row)
+						existing_item_ids.add(row.order_item_id)
+						items_appended += 1
+
+						for tax_type, tax_rate, amount, acc_head in [
+							("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
+							("SGST", flt(row.sgst_rate), flt(row.sgst_amount), "Output Tax SGST - KGOPL"),
+							("IGST", flt(row.igst_rate), flt(row.igst_amount), "Output Tax IGST - KGOPL")
+						]:
+							if amount:
+								existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
+								if existing_tax:
+									existing_tax.tax_amount += amount
+								else:
+									si.append("taxes", {
+										"charge_type": "On Net Total",
+										"rate": tax_rate,
+										"account_head": acc_head,
+										"tax_amount": amount,
+										"description": tax_type
+									})
+					except Exception as row_error:
+						group_errors = True
+						errors.append({
+							"idx": row.idx,
+							"invoice_id": row.buyer_invoice_id,
+							"event": row.event_sub_type,
+							"message": str(row_error)
+						})
+
+				if items_appended > 0:
 					si.save(ignore_permissions=True)
 					for j in si.items:
 						j.item_tax_template = ""
 						j.item_tax_rate = frappe._dict()
-
 					si.due_date = getdate(today())
+					si.save(ignore_permissions=True)
 
-					si.save(ignore_permissions=True)				
+				if not group_errors and si.docstatus == 0 and si.items:
 					si_invoice.append(si.name)
 
 			except Exception as e:
-				errors.append({
-					"idx": i.idx,
-					"invoice_id": i.buyer_invoice_id,
-					"event": i.event_sub_type,
-					"message": str(e)
-				})
+				for row in rows:
+					errors.append({
+						"idx": row.idx,
+						"invoice_id": row.buyer_invoice_id,
+						"event": row.event_sub_type,
+						"message": str(e)
+					})
 
 		# Submit Sales Invoices
 		for sii in si_invoice:
@@ -1725,135 +1812,188 @@ class EcommerceBillImport(Document):
 				})
 
 		# ---------- RETURNS ----------
-		for i in self.flipkart_items:
-			try:
-				if i.event_sub_type != "Return":
-					continue
+		return_groups = {}
+		for row in self.flipkart_items:
+			if row.event_sub_type != "Return":
+				continue
 
-				# Skip if order_item_id already exists in submitted Sales Invoice Item
-				exists_in_item = frappe.db.sql("""
-					SELECT sii.name FROM `tabSales Invoice Item` sii
-					JOIN `tabSales Invoice` si ON sii.parent = si.name
-					WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 1
-				""", i.order_item_id)
-				if exists_in_item:
-					continue
-			
+			invoice_key = row.order_id
+			if not invoice_key:
+				errors.append({
+					"idx": row.idx,
+					"invoice_id": row.buyer_invoice_id,
+					"event": row.event_sub_type,
+					"message": "Missing Order ID (order_id) for Return row"
+				})
+				continue
+
+			return_groups.setdefault(invoice_key, []).append(row)
+
+		for invoice_key, rows in return_groups.items():
+			group_errors = False
+			items_appended = 0
+
+			try:
 				existing_return = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.order_id,
+					"custom_inv_no": invoice_key,
 					"is_return": 1,
 					"docstatus": 1
-				})
+				}, "name")
 				if existing_return:
 					continue
 
 				original_inv = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.order_id,
+					"custom_inv_no": invoice_key,
 					"is_return": 0,
 					"docstatus": 1
-				})
-				# if not original_inv:
-				# 	raise Exception("Original invoice not found or not submitted")
+				}, "name")
+				if not original_inv:
+					raise Exception(f"Original invoice not found or not submitted for Order ID: {invoice_key}")
 
-				return_draft = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.order_id,
+				draft_name = frappe.db.get_value("Sales Invoice", {
+					"custom_inv_no": invoice_key,
 					"is_return": 1,
 					"docstatus": 0
-				})
-				if return_draft:
-					if exists_in_item:
-						return_invoice.append(return_draft)
-						continue
+				}, "name")
+
+				if draft_name:
+					si = frappe.get_doc("Sales Invoice", draft_name)
+					si.is_return = 1
+					if not si.return_against:
+						si.return_against = original_inv
 				else:
-					if exists_in_item:
-						continue
+					first = rows[0]
+					warehouse, location, company_address = get_warehouse_info(first.warehouse_id)
+					ecommerce_gstin = get_gstin(first.seller_gstin)
 
+					si = frappe.new_doc("Sales Invoice")
+					si.customer = customer
+					si.set_posting_time = 1
+					si.posting_date = getdate(first.buyer_invoice_date)
+					si.custom_inv_no = invoice_key
+					si.custom_ecommerce_operator = self.ecommerce_mapping
+					si.custom_ecommerce_type = self.amazon_type
+					si.taxes_and_charges = ""
+					si.update_stock = 1
+					si.company_address = company_address
+					if first.customers_billing_state:
+						state = first.customers_billing_state
+						if not state_code_dict.get(str(state).lower()):
+							raise Exception("State name Is Wrong Please Check")
+						si.place_of_supply = state_code_dict.get(str(state).lower())
+					si.ecommerce_gstin = ecommerce_gstin
+					si.location = location
+					si.is_return = 1
+					si.return_against = original_inv
+					si.custom_ecommerce_invoice_id = first.buyer_invoice_id
+					si.__newname = first.buyer_invoice_id
 
-				item_code = get_item_code(i.get(flipkart.ecom_sku_column_header))
-				if not item_code:
-					raise Exception(f"Item mapping not found for SKU: {i.get(flipkart.ecom_sku_column_header)}")
-
-				warehouse, location, company_address = get_warehouse_info(i.warehouse_id)
-				ecommerce_gstin = get_gstin(i.seller_gstin)
-				item_name = frappe.db.get_value("Item", item_code, "item_name")
-				hsn_code=frappe.db.get_value("Item",item_code,"gst_hsn_code")
-
-				item_row = {
-					"item_code": item_code,
-					"item_name": item_name,
-					"gst_hsn_code": hsn_code,
-					"qty": -abs(flt(i.item_quantity)),
-					"rate": abs(flt(i.taxable_value)) / abs(flt(i.item_quantity)),
-					"price_list_rate": abs(flt(i.taxable_value)) / abs(flt(i.item_quantity)),
-					"description": i.product_titledescription,
-					"warehouse": warehouse,
-					"custom_ecom_item_id": i.order_item_id
+				existing_item_ids = {
+					d.get("custom_ecom_item_id")
+					for d in (si.get("items") or [])
+					if d.get("custom_ecom_item_id")
 				}
 
-				si = frappe.new_doc("Sales Invoice")
-				si.customer = customer
-				si.set_posting_time = 1
-				# Parse the datetime and add 1 minute for returns
-				# buyer_invoice_datetime = datetime.strptime(str(i.buyer_invoice_date), '%Y-%m-%d %H:%M:%S') if isinstance(i.buyer_invoice_date, str) else i.buyer_invoice_date
-				# buyer_invoice_datetime_plus_1min = buyer_invoice_datetime + timedelta(minutes=1)
-				si.posting_date = getdate(i.buyer_invoice_date)
-				# si.posting_time = buyer_invoice_datetime_plus_1min.time()
-				si.custom_inv_no = i.order_id
-				si.custom_ecommerce_operator=self.ecommerce_mapping
-				si.custom_ecommerce_type=self.amazon_type
-				si.taxes_and_charges = ""
-				si.update_stock = 1
-				si.company_address = company_address
-				if i.customers_billing_state:
-					state=i.customers_billing_state
-					if not state_code_dict.get(str(state.lower())):
-						raise Exception(f"State name Is Wrong Please Check")
-					si.place_of_supply=state_code_dict.get(str(state.lower()))
-				si.ecommerce_gstin = ecommerce_gstin
-				si.location = location
-				si.is_return = 1
-				si.return_against = original_inv
-				si.custom_ecommerce_invoice_id=i.buyer_invoice_id
-				si.__newname=i.buyer_invoice_id
-				si.append("items", item_row)
-				# if flt(i.cgst_amount)>0:
-				# 	si.customer_address=customer_address_in_state
-				# elif flt(i.igst_amount):
-				# 	si.customer_address=customer_address_out_state
-				for tax_type,rate, amount, acc_head in [
-						("CGST",flt(i.cgst_rate), flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
-						("SGST", flt(i.sgst_rate),flt(i.sgst_amount), "Output Tax SGST - KGOPL"),
-						("IGST", flt(i.igst_rate),flt(i.igst_amount), "Output Tax IGST - KGOPL")
-					]:
-						if amount:
-							existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-							if existing_tax:
-								existing_tax.tax_amount += amount
-							else:
-								si.append("taxes", {
-									"charge_type": "On Net Total",
-									"rate":rate,
-									"account_head": acc_head,
-									"tax_amount": amount,
-									"description": tax_type
-								})
+				for row in rows:
+					try:
+						if row.order_item_id in existing_item_ids:
+							continue
 
-				si.save()
-				for j in si.items:
-					j.item_tax_template = ""
-					j.item_tax_rate = frappe._dict()
+						exists_in_item = frappe.db.sql("""
+							SELECT sii.name FROM `tabSales Invoice Item` sii
+							JOIN `tabSales Invoice` si ON sii.parent = si.name
+							WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 1
+						""", row.order_item_id)
+						if exists_in_item:
+							continue
 
-				si.due_date = getdate(today())
+						item_code = get_item_code(row.get(flipkart.ecom_sku_column_header))
+						if not item_code:
+							raise Exception(f"Item mapping not found for SKU: {row.get(flipkart.ecom_sku_column_header)}")
 
-				si.save(ignore_permissions=True)				
-				return_invoice.append(si.name)
+						warehouse, location, company_address = get_warehouse_info(row.warehouse_id)
+						ecommerce_gstin = get_gstin(row.seller_gstin)
+
+						if not si.company_address:
+							si.company_address = company_address
+						if not si.location:
+							si.location = location
+						if not si.ecommerce_gstin:
+							si.ecommerce_gstin = ecommerce_gstin
+						if not si.place_of_supply and row.customers_billing_state:
+							state = row.customers_billing_state
+							if not state_code_dict.get(str(state).lower()):
+								raise Exception("State name Is Wrong Please Check")
+							si.place_of_supply = state_code_dict.get(str(state).lower())
+						if not si.custom_ecommerce_invoice_id and row.buyer_invoice_id:
+							si.custom_ecommerce_invoice_id = row.buyer_invoice_id
+							si.__newname = row.buyer_invoice_id
+
+						item_name = frappe.db.get_value("Item", item_code, "item_name")
+						hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code")
+
+						qty_abs = abs(flt(row.item_quantity))
+						item_row = {
+							"item_code": item_code,
+							"item_name": item_name,
+							"gst_hsn_code": hsn_code,
+							"qty": -qty_abs,
+							"rate": abs(flt(row.taxable_value)) / qty_abs if qty_abs else 0,
+							"price_list_rate": abs(flt(row.taxable_value)) / qty_abs if qty_abs else 0,
+							"description": row.product_titledescription,
+							"warehouse": warehouse,
+							"custom_ecom_item_id": row.order_item_id
+						}
+
+						si.append("items", item_row)
+						existing_item_ids.add(row.order_item_id)
+						items_appended += 1
+
+						for tax_type, tax_rate, amount, acc_head in [
+							("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
+							("SGST", flt(row.sgst_rate), flt(row.sgst_amount), "Output Tax SGST - KGOPL"),
+							("IGST", flt(row.igst_rate), flt(row.igst_amount), "Output Tax IGST - KGOPL")
+						]:
+							if amount:
+								existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
+								if existing_tax:
+									existing_tax.tax_amount += amount
+								else:
+									si.append("taxes", {
+										"charge_type": "On Net Total",
+										"rate": tax_rate,
+										"account_head": acc_head,
+										"tax_amount": amount,
+										"description": tax_type
+									})
+					except Exception as row_error:
+						group_errors = True
+						errors.append({
+							"idx": row.idx,
+							"invoice_id": row.buyer_invoice_id,
+							"event": row.event_sub_type,
+							"message": str(row_error)
+						})
+
+				if items_appended > 0:
+					si.save(ignore_permissions=True)
+					for j in si.items:
+						j.item_tax_template = ""
+						j.item_tax_rate = frappe._dict()
+					si.due_date = getdate(today())
+					si.save(ignore_permissions=True)
+
+				if not group_errors and si.docstatus == 0 and si.items:
+					return_invoice.append(si.name)
+
 			except Exception as e:
-				errors.append({
-					"idx": i.idx,
-					"invoice_id": i.buyer_invoice_id,
-					"event": i.event_sub_type,
-					"message": str(e)
-				})
+				for row in rows:
+					errors.append({
+						"idx": row.idx,
+						"invoice_id": row.buyer_invoice_id,
+						"event": row.event_sub_type,
+						"message": str(e)
+					})
 
 		# Submit Return Invoices
 		for sii in return_invoice:
@@ -2192,128 +2332,177 @@ class EcommerceBillImport(Document):
 			return None
 
 		# ---------- SALES ----------
-		for i in self.jio_mart_items:
+		sale_groups = {}
+		for row in self.jio_mart_items:
+			if row.type != "shipment":
+				continue
+
+			invoice_key = row.original_invoice_id
+			if not invoice_key:
+				errors.append({
+					"idx": row.idx,
+					"invoice_id": row.buyer_invoice_id,
+					"event": row.type,
+					"message": "Missing Original Invoice ID (original_invoice_id) for shipment row"
+				})
+				continue
+
+			sale_groups.setdefault(invoice_key, []).append(row)
+
+		for invoice_key, rows in sale_groups.items():
+			group_errors = False
+			items_appended = 0
+
 			try:
-				if i.type != "shipment":
-					continue
-
-				# Skip if order_item_id already exists in submitted Sales Invoice Item
-				exists_in_item = frappe.db.sql("""
-					SELECT sii.name FROM `tabSales Invoice Item` sii
-					JOIN `tabSales Invoice` si ON sii.parent = si.name
-					WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
-				""", i.order_item_id)
-				# if exists_in_item:
-				# 	si_invoice.append(draft)
-				# 	continue
-
 				existing = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.original_invoice_id,
+					"custom_inv_no": invoice_key,
 					"is_return": 0,
 					"docstatus": 1
-				})
+				}, "name")
 				if existing:
 					continue
 
-				draft = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.original_invoice_id,
+				draft_name = frappe.db.get_value("Sales Invoice", {
+					"custom_inv_no": invoice_key,
 					"is_return": 0,
 					"docstatus": 0
-				})
-				if draft:
-					if exists_in_item:
-						
-						si_invoice.append(draft)
-						continue
-				else:
-					if exists_in_item:
-						continue
-
-				item_code = get_item_code(i.get(jiomart.ecom_sku_column_header))
-				if not item_code:
-					raise Exception(f"Item mapping not found for SKU: {i.get(jiomart.ecom_sku_column_header)}")
+				}, "name")
 
 				warehouse, location, company_address = get_warehouse_info()
-				ecommerce_gstin = get_gstin(i.seller_gstin)
-				item_name = frappe.db.get_value("Item", item_code, "item_name")
-				hsn_code=frappe.db.get_value("Item",item_code,"gst_hsn_code")
-				item_row = {
-					"item_code": item_code,
-					"item_name": item_name,
-					"qty": flt(i.item_quantity),
-					"rate": flt(i.taxable_value),
-					"gst_hsn_code": hsn_code,
-					"description": i.product_titledescription,
-					"warehouse": warehouse,
-					"margin_type": "Amount",
-					"margin_rate_or_amount": flt(i.seller_coupon_amount),
-					"income_account": jiomart.income_account,
-					"custom_ecom_item_id": i.order_item_id
-				}
 
-				
+				if draft_name:
+					si = frappe.get_doc("Sales Invoice", draft_name)
+				else:
+					first = rows[0]
+					ecommerce_gstin = get_gstin(first.seller_gstin)
 
-				if not draft:
 					si = frappe.new_doc("Sales Invoice")
 					si.customer = customer
 					si.set_posting_time = 1
-					# Parse the datetime and add 2 seconds
-					# buyer_invoice_datetime = datetime.strptime(str(i.buyer_invoice_date), '%Y-%m-%d %H:%M:%S') if isinstance(i.buyer_invoice_date, str) else i.buyer_invoice_date
-					# buyer_invoice_datetime_plus_2 = buyer_invoice_datetime + timedelta(seconds=2)
-					si.posting_date = getdate(i.buyer_invoice_date)
-					# si.posting_time = get_time(i.buyer_invoice_date)
-					si.custom_inv_no = i.original_invoice_id
-					si.custom_ecommerce_operator=self.ecommerce_mapping
-					si.custom_ecommerce_type=self.amazon_type
-					if i.customers_billing_state:
-						state=i.customers_billing_state
-						if not state_code_dict.get(str(state.lower())):
-							raise Exception(f"State name Is Wrong Please Check")
-						si.place_of_supply=state_code_dict.get(str(state.lower()))
+					si.posting_date = getdate(first.buyer_invoice_date)
+					si.custom_inv_no = invoice_key
+					si.custom_ecommerce_operator = self.ecommerce_mapping
+					si.custom_ecommerce_type = self.amazon_type
+					if first.customers_billing_state:
+						state = first.customers_billing_state
+						if not state_code_dict.get(str(state).lower()):
+							raise Exception("State name Is Wrong Please Check")
+						si.place_of_supply = state_code_dict.get(str(state).lower())
 					si.taxes_and_charges = ""
 					si.update_stock = 1
 					si.company_address = company_address
-					si.custom_ecommerce_invoice_id=i.buyer_invoice_id
-					si.__newname=i.buyer_invoice_id
+					si.custom_ecommerce_invoice_id = first.buyer_invoice_id
+					si.__newname = first.buyer_invoice_id
 					si.ecommerce_gstin = ecommerce_gstin
-					
 					si.location = location
-					si.append("items", item_row)
 
-					for tax_type, rate,amount, acc_head in [
-						("CGST", i.cgst_rate,flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
-						("SGST", i.sgst_rate_or_utgst_as_applicable,flt(i.sgst_amount_or_utgst_as_applicable), "Output Tax SGST - KGOPL"),
-						("IGST", i.igst_rate,flt(i.igst_amount), "Output Tax IGST - KGOPL")
-					]:
-						if amount:
-							existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-							if existing_tax:
-								existing_tax.tax_amount += amount
-							else:
-								si.append("taxes", {
-									"charge_type": "On Net Total",
-									"rate":rate,
-									"account_head": acc_head,
-									"tax_amount": amount,
-									"description": tax_type
-								})
+				existing_item_ids = {
+					d.get("custom_ecom_item_id")
+					for d in (si.get("items") or [])
+					if d.get("custom_ecom_item_id")
+				}
 
+				for row in rows:
+					try:
+						if row.order_item_id in existing_item_ids:
+							continue
+
+						# Skip if order_item_id already exists in non-submitted Sales Invoice Item
+						exists_in_item = frappe.db.sql("""
+							SELECT sii.name FROM `tabSales Invoice Item` sii
+							JOIN `tabSales Invoice` si ON sii.parent = si.name
+							WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 0
+						""", row.order_item_id)
+						if exists_in_item:
+							continue
+
+						item_code = get_item_code(row.get(jiomart.ecom_sku_column_header))
+						if not item_code:
+							raise Exception(f"Item mapping not found for SKU: {row.get(jiomart.ecom_sku_column_header)}")
+
+						item_name = frappe.db.get_value("Item", item_code, "item_name")
+						hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code")
+
+						item_row = {
+							"item_code": item_code,
+							"item_name": item_name,
+							"qty": flt(row.item_quantity),
+							"rate": flt(row.taxable_value),
+							"gst_hsn_code": hsn_code,
+							"description": row.product_titledescription,
+							"warehouse": warehouse,
+							"margin_type": "Amount",
+							"margin_rate_or_amount": flt(row.seller_coupon_amount),
+							"income_account": jiomart.income_account,
+							"custom_ecom_item_id": row.order_item_id
+						}
+
+						# Fill missing headers (draft invoices)
+						ecommerce_gstin = get_gstin(row.seller_gstin)
+						if not si.company_address:
+							si.company_address = company_address
+						if not si.location:
+							si.location = location
+						if not si.ecommerce_gstin:
+							si.ecommerce_gstin = ecommerce_gstin
+						if not si.place_of_supply and row.customers_billing_state:
+							state = row.customers_billing_state
+							if not state_code_dict.get(str(state).lower()):
+								raise Exception("State name Is Wrong Please Check")
+							si.place_of_supply = state_code_dict.get(str(state).lower())
+						if not si.custom_ecommerce_invoice_id and row.buyer_invoice_id:
+							si.custom_ecommerce_invoice_id = row.buyer_invoice_id
+							si.__newname = row.buyer_invoice_id
+
+						si.append("items", item_row)
+						existing_item_ids.add(row.order_item_id)
+						items_appended += 1
+
+						for tax_type, rate, amount, acc_head in [
+							("CGST", row.cgst_rate, flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
+							("SGST", row.sgst_rate_or_utgst_as_applicable, flt(row.sgst_amount_or_utgst_as_applicable), "Output Tax SGST - KGOPL"),
+							("IGST", row.igst_rate, flt(row.igst_amount), "Output Tax IGST - KGOPL")
+						]:
+							if amount:
+								existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
+								if existing_tax:
+									existing_tax.tax_amount += amount
+								else:
+									si.append("taxes", {
+										"charge_type": "On Net Total",
+										"rate": rate,
+										"account_head": acc_head,
+										"tax_amount": amount,
+										"description": tax_type
+									})
+					except Exception as row_error:
+						group_errors = True
+						errors.append({
+							"idx": row.idx,
+							"invoice_id": row.buyer_invoice_id,
+							"event": row.type,
+							"message": str(row_error)
+						})
+
+				if items_appended > 0:
 					si.save(ignore_permissions=True)
 					for j in si.items:
 						j.item_tax_template = ""
 						j.item_tax_rate = frappe._dict()
-						j.rate=flt(i.taxable_value)
-					si.due_date=getdate(today())
+					si.due_date = getdate(today())
 					si.save(ignore_permissions=True)
+
+				if not group_errors and si.docstatus == 0 and si.items:
 					si_invoice.append(si.name)
 
 			except Exception as e:
-				errors.append({
-					"idx": i.idx,
-					"invoice_id": i.buyer_invoice_id,
-					"event": i.type,
-					"message": str(e)
-				})
+				for row in rows:
+					errors.append({
+						"idx": row.idx,
+						"invoice_id": row.buyer_invoice_id,
+						"event": row.type,
+						"message": str(e)
+					})
 
 		# Submit Sales Invoices
 		for sii in si_invoice:
@@ -2328,129 +2517,188 @@ class EcommerceBillImport(Document):
 				})
 
 		# ---------- RETURNS ----------
-		for i in self.jio_mart_items:
-			try:
-				if i.event_type != "return":
-					continue
+		return_groups = {}
+		for row in self.jio_mart_items:
+			if row.event_type != "return":
+				continue
 
-				# Skip if order_item_id already exists in submitted Sales Invoice Item
-				exists_in_item = frappe.db.sql("""
-					SELECT sii.name FROM `tabSales Invoice Item` sii
-					JOIN `tabSales Invoice` si ON sii.parent = si.name
-					WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 1
-				""", i.order_item_id)
-				# if exists_in_item:
-				# 	continue
-			
+			invoice_key = row.original_invoice_id
+			if not invoice_key:
+				errors.append({
+					"idx": row.idx,
+					"invoice_id": row.buyer_invoice_id,
+					"event": row.event_type,
+					"message": "Missing Original Invoice ID (original_invoice_id) for return row"
+				})
+				continue
+
+			return_groups.setdefault(invoice_key, []).append(row)
+
+		for invoice_key, rows in return_groups.items():
+			group_errors = False
+			items_appended = 0
+
+			try:
 				existing_return = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.original_invoice_id,
+					"custom_inv_no": invoice_key,
 					"is_return": 1,
 					"docstatus": 1
-				})
+				}, "name")
 				if existing_return:
 					continue
 
 				original_inv = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.original_invoice_id,
+					"custom_inv_no": invoice_key,
 					"is_return": 0,
 					"docstatus": 1
-				})
-				# if not original_inv:
-				# 	raise Exception("Original invoice not found or not submitted")
+				}, "name")
+				if not original_inv:
+					raise Exception(f"Original invoice not found or not submitted for Invoice ID: {invoice_key}")
 
-				return_draft = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": i.original_invoice_id,
+				draft_name = frappe.db.get_value("Sales Invoice", {
+					"custom_inv_no": invoice_key,
 					"is_return": 1,
 					"docstatus": 0
-				})
-				if return_draft:
-					if exists_in_item:
-						return_invoice.append(return_draft)
-						continue
-				else:
-					if exists_in_item:
-						continue
-
-
-				item_code = get_item_code(i.get(jiomart.ecom_sku_column_header))
-				if not item_code:
-					raise Exception(f"Item mapping not found for SKU: {i.get(jiomart.ecom_sku_column_header)}")
+				}, "name")
 
 				warehouse, location, company_address = get_warehouse_info()
-				ecommerce_gstin = get_gstin(i.seller_gstin)
-				item_name = frappe.db.get_value("Item", item_code, "item_name")
-				hsn_code=frappe.db.get_value("Item",item_code,"gst_hsn_code")
 
-				item_row = {
-					"item_code": item_code,
-					"item_name": item_name,
-					"qty": -abs(flt(i.item_quantity)),
-					"rate": abs(flt(i.taxable_value)),
-					"gst_hsn_code": hsn_code,
-					"description": i.product_titledescription,
-					"warehouse": warehouse,
-					"margin_type": "Amount",
-					"margin_rate_or_amount": flt(i.seller_coupon_amount),
-					"income_account": jiomart.income_account,
-					"custom_ecom_item_id": i.order_item_id
+				if draft_name:
+					si = frappe.get_doc("Sales Invoice", draft_name)
+					si.is_return = 1
+					if not si.return_against:
+						si.return_against = original_inv
+				else:
+					first = rows[0]
+					ecommerce_gstin = get_gstin(first.seller_gstin)
+
+					si = frappe.new_doc("Sales Invoice")
+					si.customer = customer
+					si.set_posting_time = 1
+					si.posting_date = getdate(first.buyer_invoice_date)
+					si.custom_inv_no = invoice_key
+					si.custom_ecommerce_operator = self.ecommerce_mapping
+					si.custom_ecommerce_type = self.amazon_type
+					si.taxes_and_charges = ""
+					si.update_stock = 1
+					si.company_address = company_address
+					si.ecommerce_gstin = ecommerce_gstin
+					si.location = location
+					si.is_return = 1
+					si.return_against = original_inv
+					si.custom_ecommerce_invoice_id = first.buyer_invoice_id
+					si.__newname = first.buyer_invoice_id
+					if first.customers_billing_state:
+						state = first.customers_billing_state
+						if not state_code_dict.get(str(state).lower()):
+							raise Exception("State name Is Wrong Please Check")
+						si.place_of_supply = state_code_dict.get(str(state).lower())
+
+				existing_item_ids = {
+					d.get("custom_ecom_item_id")
+					for d in (si.get("items") or [])
+					if d.get("custom_ecom_item_id")
 				}
-				si = frappe.new_doc("Sales Invoice")
-				si.customer = customer
-				si.set_posting_time = 1
-				# Parse the datetime and add 1 minute for returns
-				si.posting_date = getdate(i.buyer_invoice_date)
-				si.custom_inv_no = i.original_invoice_id
-				si.custom_ecommerce_operator=self.ecommerce_mapping
-				si.custom_ecommerce_type=self.amazon_type
-				si.taxes_and_charges = ""
-				si.update_stock = 1
-				si.company_address = company_address
-				si.ecommerce_gstin = ecommerce_gstin
-				si.location = location
-				si.is_return = 1
-				si.return_against = original_inv
-				si.custom_ecommerce_invoice_id=i.buyer_invoice_id
-				si.__newname=i.buyer_invoice_id
-				si.append("items", item_row)
-				if i.customers_billing_state:
-					state=i.customers_billing_state
-					if not state_code_dict.get(str(state.lower())):
-						raise Exception(f"State name Is Wrong Please Check")
-					si.place_of_supply=state_code_dict.get(str(state.lower()))
-				for tax_type, rate,amount, acc_head in [
-						("CGST", i.cgst_rate,flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
-						("SGST", i.sgst_rate_or_utgst_as_applicable,flt(i.sgst_amount_or_utgst_as_applicable), "Output Tax SGST - KGOPL"),
-						("IGST", i.igst_rate,flt(i.igst_amount), "Output Tax IGST - KGOPL")
-					]:
-						if amount:
-							existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-							if existing_tax:
-								existing_tax.tax_amount += amount
-							else:
-								si.append("taxes", {
-									"charge_type": "On Net Total",
-									"rate":rate,
-									"account_head": acc_head,
-									"tax_amount": amount,
-									"description": tax_type
-								})
 
-				si.save(ignore_permissions=True)
-				for j in si.items:
-					j.item_tax_template = ""
-					j.item_tax_rate = frappe._dict()
-					j.rate=flt(i.taxable_value)
-				si.due_date=getdate(today())
-				si.save(ignore_permissions=True)
-				return_invoice.append(si.name)
+				for row in rows:
+					try:
+						if row.order_item_id in existing_item_ids:
+							continue
+
+						exists_in_item = frappe.db.sql("""
+							SELECT sii.name FROM `tabSales Invoice Item` sii
+							JOIN `tabSales Invoice` si ON sii.parent = si.name
+							WHERE sii.custom_ecom_item_id = %s AND si.docstatus != 1 AND si.is_return = 1
+						""", row.order_item_id)
+						if exists_in_item:
+							continue
+
+						item_code = get_item_code(row.get(jiomart.ecom_sku_column_header))
+						if not item_code:
+							raise Exception(f"Item mapping not found for SKU: {row.get(jiomart.ecom_sku_column_header)}")
+
+						item_name = frappe.db.get_value("Item", item_code, "item_name")
+						hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code")
+
+						item_row = {
+							"item_code": item_code,
+							"item_name": item_name,
+							"qty": -abs(flt(row.item_quantity)),
+							"rate": abs(flt(row.taxable_value)),
+							"gst_hsn_code": hsn_code,
+							"description": row.product_titledescription,
+							"warehouse": warehouse,
+							"margin_type": "Amount",
+							"margin_rate_or_amount": flt(row.seller_coupon_amount),
+							"income_account": jiomart.income_account,
+							"custom_ecom_item_id": row.order_item_id
+						}
+
+						ecommerce_gstin = get_gstin(row.seller_gstin)
+						if not si.company_address:
+							si.company_address = company_address
+						if not si.location:
+							si.location = location
+						if not si.ecommerce_gstin:
+							si.ecommerce_gstin = ecommerce_gstin
+						if not si.place_of_supply and row.customers_billing_state:
+							state = row.customers_billing_state
+							if not state_code_dict.get(str(state).lower()):
+								raise Exception("State name Is Wrong Please Check")
+							si.place_of_supply = state_code_dict.get(str(state).lower())
+						if not si.custom_ecommerce_invoice_id and row.buyer_invoice_id:
+							si.custom_ecommerce_invoice_id = row.buyer_invoice_id
+							si.__newname = row.buyer_invoice_id
+
+						si.append("items", item_row)
+						existing_item_ids.add(row.order_item_id)
+						items_appended += 1
+
+						for tax_type, rate, amount, acc_head in [
+							("CGST", row.cgst_rate, flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
+							("SGST", row.sgst_rate_or_utgst_as_applicable, flt(row.sgst_amount_or_utgst_as_applicable), "Output Tax SGST - KGOPL"),
+							("IGST", row.igst_rate, flt(row.igst_amount), "Output Tax IGST - KGOPL")
+						]:
+							if amount:
+								existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
+								if existing_tax:
+									existing_tax.tax_amount += amount
+								else:
+									si.append("taxes", {
+										"charge_type": "On Net Total",
+										"rate": rate,
+										"account_head": acc_head,
+										"tax_amount": amount,
+										"description": tax_type
+									})
+					except Exception as row_error:
+						group_errors = True
+						errors.append({
+							"idx": row.idx,
+							"invoice_id": row.buyer_invoice_id,
+							"event": row.event_type,
+							"message": str(row_error)
+						})
+
+				if items_appended > 0:
+					si.save(ignore_permissions=True)
+					for j in si.items:
+						j.item_tax_template = ""
+						j.item_tax_rate = frappe._dict()
+					si.due_date = getdate(today())
+					si.save(ignore_permissions=True)
+
+				if not group_errors and si.docstatus == 0 and si.items:
+					return_invoice.append(si.name)
 
 			except Exception as e:
-				errors.append({
-					"idx": i.idx,
-					"invoice_id": i.buyer_invoice_id,
-					"event": i.type,
-					"message": str(e)
-				})
+				for row in rows:
+					errors.append({
+						"idx": row.idx,
+						"invoice_id": row.buyer_invoice_id,
+						"event": row.event_type,
+						"message": str(e)
+					})
 
 		# Submit Return Invoices
 		for sii in return_invoice:
@@ -2467,7 +2715,7 @@ class EcommerceBillImport(Document):
 		self.error_json = str(json.dumps(errors))
 		if len(errors) == 0:
 			self.status = "Success"
-		elif len(self.flipkart_items) != len(errors):
+		elif len(self.jio_mart_items) != len(errors):
 			self.status = "Partial Success"
 		else:
 			self.status = "Error"
