@@ -18,46 +18,58 @@ from frappe.utils.data import get_time
 from frappe.utils.file_manager import get_file_path
 from frappe.utils import flt, getdate
 state_code_dict = {
-	"jammu and kashmir": "01-Jammu and Kashmir",
-	"jammu & kashmir": "01-Jammu and Kashmir",
-	"himachal pradesh": "02-Himachal Pradesh",
-	"punjab": "03-Punjab",
-	"chandigarh": "04-Chandigarh",
-	"uttarakhand": "05-Uttarakhand",
-	"haryana": "06-Haryana",
-	"delhi": "07-Delhi",
-	"rajasthan": "08-Rajasthan",
-	"uttar pradesh": "09-Uttar Pradesh",
-	"bihar": "10-Bihar",
-	"sikkim": "11-Sikkim",
-	"arunachal pradesh": "12-Arunachal Pradesh",
-	"nagaland": "13-Nagaland",
-	"manipur": "14-Manipur",
-	"mizoram": "15-Mizoram",
-	"tripura": "16-Tripura",
-	"meghalaya": "17-Meghalaya",
-	"assam": "18-Assam",
-	"west bengal": "19-West Bengal",
-	"jharkhand": "20-Jharkhand",
-	"odisha": "21-Odisha",
-	"chhattisgarh": "22-Chhattisgarh",
-	"madhya pradesh": "23-Madhya Pradesh",
-	"gujarat": "24-Gujarat",
-	"daman and diu": "25-Daman and Diu",
-	"dadra and nagar haveli": "26-Dadra and Nagar Haveli",
-	"maharashtra": "27-Maharashtra",
-	"andhra pradesh (old)": "28-Andhra Pradesh (Old)",
-	"karnataka": "29-Karnataka",
-	"goa": "30-Goa",
-	"lakshadweep": "31-Lakshadweep",
-	"kerala": "32-Kerala",
-	"tamil nadu": "33-Tamil Nadu",
-	"puducherry": "34-Puducherry",
-	"andaman and nicobar islands": "35-Andaman and Nicobar Islands",
-	"telangana": "36-Telangana",
-	"andhra pradesh": "37-Andhra Pradesh",
-	"other territory": "97-Other Territory"
+    "jammu and kashmir": "01-Jammu and Kashmir",
+    "jammu & kashmir": "01-Jammu and Kashmir",
+
+    "himachal pradesh": "02-Himachal Pradesh",
+    "punjab": "03-Punjab",
+    "chandigarh": "04-Chandigarh",
+    "uttarakhand": "05-Uttarakhand",
+    "haryana": "06-Haryana",
+    "delhi": "07-Delhi",
+    "rajasthan": "08-Rajasthan",
+    "uttar pradesh": "09-Uttar Pradesh",
+    "bihar": "10-Bihar",
+    "sikkim": "11-Sikkim",
+    "arunachal pradesh": "12-Arunachal Pradesh",
+    "nagaland": "13-Nagaland",
+    "manipur": "14-Manipur",
+    "mizoram": "15-Mizoram",
+    "tripura": "16-Tripura",
+    "meghalaya": "17-Meghalaya",
+    "assam": "18-Assam",
+    "west bengal": "19-West Bengal",
+    "jharkhand": "20-Jharkhand",
+    "odisha": "21-Odisha",
+    "chhattisgarh": "22-Chhattisgarh",
+    "madhya pradesh": "23-Madhya Pradesh",
+    "gujarat": "24-Gujarat",
+
+    # ✅ Post-2020 merged UT
+    "dadra and nagar haveli and daman and diu": "26-Dadra and Nagar Haveli and Daman and Diu",
+    "dadra & nagar haveli & daman & diu": "26-Dadra and Nagar Haveli and Daman and Diu",
+
+    "maharashtra": "27-Maharashtra",
+    "karnataka": "29-Karnataka",
+    "goa": "30-Goa",
+    "lakshadweep": "31-Lakshadweep Islands",
+    "lakshadweep islands": "31-Lakshadweep Islands",
+    "kerala": "32-Kerala",
+    "tamil nadu": "33-Tamil Nadu",
+    "puducherry": "34-Puducherry",
+    "andaman and nicobar islands": "35-Andaman and Nicobar Islands",
+    "telangana": "36-Telangana",
+    "andhra pradesh": "37-Andhra Pradesh",
+
+    # ✅ New UT after J&K reorganisation
+    "ladakh": "38-Ladakh",
+
+    # ✅ Export / special cases
+    "other countries": "96-Other Countries",
+    "other territory": "97-Other Territory"
 }
+
+
 class EcommerceBillImport(Document):
 	def validate(self):
 		if not self.ecommerce_mapping:
