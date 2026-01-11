@@ -1,0 +1,296 @@
+diff --git a/ecom_import_tool/ecom_import_tool/doctype/ecommerce_bill_import/ecommerce_bill_import.py b/ecom_import_tool/ecom_import_tool/doctype/ecommerce_bill_import/ecommerce_bill_import.py
+index 5deba75..de1eb08 100644
+--- a/ecom_import_tool/ecom_import_tool/doctype/ecommerce_bill_import/ecommerce_bill_import.py
++++ b/ecom_import_tool/ecom_import_tool/doctype/ecommerce_bill_import/ecommerce_bill_import.py
+@@ -17,6 +17,43 @@ from datetime import datetime, timedelta
+ from frappe.utils.data import get_time
+ from frappe.utils.file_manager import get_file_path
+ from frappe.utils import flt, getdate
++
++def normalize_state_key(state):
++    """Normalize state strings to match `state_code_dict` keys.
++
++    Why: e-commerce reports often send inconsistent values like:
++    - "West Bengal ", "WEST  BENGAL", "West Bengal\r"
++    - "27-Maharashtra", "27 - Maharashtra"
++    - "Jammu & Kashmir" vs "Jammu and Kashmir"
++    """
++    if not state:
++        return ""
++
++    key = str(state).replace("\u00a0", " ")  # NBSP -> space
++    key = key.strip().lower()
++
++    # Drop leading state code prefix like "27-maharashtra" or "27 - maharashtra"
++    if len(key) >= 3 and key[:2].isdigit():
++        remainder = key[2:].lstrip(" -")
++        if remainder:
++            key = remainder
++
++    key = key.replace("&", "and")
++    key = key.replace("_", " ").replace("-", " ")
++    key = " ".join(key.split())  # collapse multiple spaces/newlines
++    return key
++
++
++def normalize_tax_rate(rate):
++    """Normalize tax rate to the percentage ERPNext expects (e.g. 5 for 5%).
++
++    Some sources provide 0.05 (fraction) and some provide 5 (percent).
++    """
++    rate = flt(rate)
++    if 0 < rate < 1:
++        return rate * 100
++    return rate
++
+ state_code_dict = {
+     "jammu and kashmir": "01-Jammu and Kashmir",
+     "jammu & kashmir": "01-Jammu and Kashmir",
+@@ -716,10 +753,11 @@ class EcommerceBillImport(Document):
+ 								if status!="Active":
+ 									if child_row.ship_to_state:
+ 										state=child_row.ship_to_state
+-										if not state_code_dict.get(str(state.lower())):
++										place_of_supply = state_code_dict.get(normalize_state_key(state))
++										if not place_of_supply:
+ 											error_names.append(invoice_no)
+-											raise Exception(f"State name Is Wrong Please Check")
+-										si.place_of_supply=state_code_dict.get(str(state.lower()))
++											raise Exception(f"State name Is Wrong Please Check: {state!r}")
++										si.place_of_supply = place_of_supply
+ 
+ 								si.append("items", {
+ 									"item_code": itemcode,
+@@ -748,7 +786,7 @@ class EcommerceBillImport(Document):
+ 												si.append("taxes", {
+ 													"charge_type": "On Net Total",
+ 													"account_head": acc_head,
+-													"rate":rate,
++													"rate": normalize_tax_rate(rate),
+ 													"tax_amount": amount,
+ 													"description": tax_type
+ 												})
+@@ -850,10 +888,11 @@ class EcommerceBillImport(Document):
+ 								if status!="Active":
+ 									if child_row.ship_to_state:
+ 										state=child_row.ship_to_state
+-										if not state_code_dict.get(str(state.lower())):
++										place_of_supply = state_code_dict.get(normalize_state_key(state))
++										if not place_of_supply:
+ 											error_names.append(invoice_no)
+-											raise Exception(f"State name Is Wrong Please Check")
+-										si_return.place_of_supply=state_code_dict.get(str(state.lower()))
++											raise Exception(f"State name Is Wrong Please Check: {state!r}")
++										si_return.place_of_supply = place_of_supply
+ 
+ 								if not si_return.location:
+ 									si_return.location = location
+@@ -889,7 +928,7 @@ class EcommerceBillImport(Document):
+ 												si_return.append("taxes", {
+ 													"charge_type": "On Net Total",
+ 													"account_head": acc_head,
+-													"rate":rate,
++													"rate": normalize_tax_rate(rate),
+ 													"tax_amount": amount,
+ 													"description": tax_type
+ 												})
+@@ -1056,10 +1095,11 @@ class EcommerceBillImport(Document):
+ 							si.company_address = com_address
+ 							if child_row.ship_to_state:
+ 								state = child_row.ship_to_state
+-								if not state_code_dict.get(str(state.lower())):
++								place_of_supply = state_code_dict.get(normalize_state_key(state))
++								if not place_of_supply:
+ 									error_names.append(invoice_no)
+-									raise Exception(f"State name Is Wrong Please Check")
+-								si.place_of_supply = state_code_dict.get(str(state.lower()))
++									raise Exception(f"State name Is Wrong Please Check: {state!r}")
++								si.place_of_supply = place_of_supply
+ 							si.ecommerce_gstin = ecommerce_gstin
+ 
+ 							# ---- Append Item ----
+@@ -1093,7 +1133,7 @@ class EcommerceBillImport(Document):
+ 										si.append("taxes", {
+ 											"charge_type": "On Net Total",
+ 											"account_head": acc_head,
+-											"rate": rate * 100,
++											"rate": normalize_tax_rate(rate),
+ 											"tax_amount": amount,
+ 											"description": tax_type
+ 										})
+@@ -1214,10 +1254,11 @@ class EcommerceBillImport(Document):
+ 							si_return.company_address = com_address
+ 							if child_row.ship_to_state:
+ 								state = child_row.ship_to_state
+-								if not state_code_dict.get(str(state.lower())):
++								place_of_supply = state_code_dict.get(normalize_state_key(state))
++								if not place_of_supply:
+ 									si_error.append(invoice_no)
+-									raise Exception(f"State name Is Wrong Please Check")
+-								si_return.place_of_supply = state_code_dict.get(str(state.lower()))
++									raise Exception(f"State name Is Wrong Please Check: {state!r}")
++								si_return.place_of_supply = place_of_supply
+ 							si_return.ecommerce_gstin = ecommerce_gstin
+ 
+ 							hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
+@@ -1249,7 +1290,7 @@ class EcommerceBillImport(Document):
+ 										si_return.append("taxes", {
+ 											"charge_type": "On Net Total",
+ 											"account_head": acc_head,
+-											"rate": rate * 100,
++											"rate": normalize_tax_rate(rate),
+ 											"tax_amount": amount,
+ 											"description": tax_type
+ 										})
+@@ -1390,9 +1431,10 @@ class EcommerceBillImport(Document):
+ 						doc.company_address = wh.erp_address
+ 						if row.ship_to_state:
+ 							state=row.ship_to_state
+-							if not state_code_dict.get(str(state.lower())):
+-								raise Exception(f"State name Is Wrong Please Check")
+-							doc.place_of_supply = state_code_dict.get(str(row.ship_to_state).lower())
++							place_of_supply = state_code_dict.get(normalize_state_key(state))
++							if not place_of_supply:
++								raise Exception(f"State name Is Wrong Please Check: {state!r}")
++							doc.place_of_supply = place_of_supply
+ 
+ 						doc.append("items", {
+ 							"item_code": item_code,
+@@ -1416,7 +1458,7 @@ class EcommerceBillImport(Document):
+ 										doc.append("taxes", {
+ 											"charge_type": "On Net Total",
+ 											"account_head": acc_head,
+-											"rate": rate * 100,
++											"rate": normalize_tax_rate(rate),
+ 											"tax_amount": amount,
+ 											"description": tax_type
+ 										})
+@@ -1501,7 +1543,7 @@ class EcommerceBillImport(Document):
+ 										pi_doc.append("taxes", {
+ 											"charge_type": "On Net Total",
+ 											"account_head": acc_head,
+-											"rate": rate * 100,
++											"rate": normalize_tax_rate(rate),
+ 											"tax_amount": amount,
+ 											"description": tax_type
+ 										})
+@@ -1652,9 +1694,10 @@ class EcommerceBillImport(Document):
+ 					si.update_stock = 1
+ 					if i.customers_billing_state:
+ 						state=i.customers_billing_state
+-						if not state_code_dict.get(str(state.lower())):
+-							raise Exception(f"State name Is Wrong Please Check")
+-						si.place_of_supply=state_code_dict.get(str(state.lower()))
++						place_of_supply = state_code_dict.get(normalize_state_key(state))
++						if not place_of_supply:
++							raise Exception(f"State name Is Wrong Please Check: {state!r}")
++						si.place_of_supply = place_of_supply
+ 					si.company_address = company_address
+ 					si.ecommerce_gstin = ecommerce_gstin
+ 					# if flt(i.cgst_amount)>0:
+@@ -1677,7 +1720,7 @@ class EcommerceBillImport(Document):
+ 							else:
+ 								si.append("taxes", {
+ 									"charge_type": "On Net Total",
+-									"rate":rate,
++									"rate": normalize_tax_rate(rate),
+ 									"account_head": acc_head,
+ 									"tax_amount": amount,
+ 									"description": tax_type
+@@ -1795,9 +1838,10 @@ class EcommerceBillImport(Document):
+ 				si.company_address = company_address
+ 				if i.customers_billing_state:
+ 					state=i.customers_billing_state
+-					if not state_code_dict.get(str(state.lower())):
+-						raise Exception(f"State name Is Wrong Please Check")
+-					si.place_of_supply=state_code_dict.get(str(state.lower()))
++					place_of_supply = state_code_dict.get(normalize_state_key(state))
++					if not place_of_supply:
++						raise Exception(f"State name Is Wrong Please Check: {state!r}")
++					si.place_of_supply = place_of_supply
+ 				si.ecommerce_gstin = ecommerce_gstin
+ 				si.location = location
+ 				si.is_return = 1
+@@ -1821,7 +1865,7 @@ class EcommerceBillImport(Document):
+ 							else:
+ 								si.append("taxes", {
+ 									"charge_type": "On Net Total",
+-									"rate":rate,
++									"rate": normalize_tax_rate(rate),
+ 									"account_head": acc_head,
+ 									"tax_amount": amount,
+ 									"description": tax_type
+@@ -1940,9 +1984,10 @@ class EcommerceBillImport(Document):
+ 				si.custom_inv_no = i.order_item_id
+ 				if i.destination_address_state:
+ 					state=i.destination_address_state
+-					if not state_code_dict.get(str(state.lower())):
+-						raise Exception(f"State name Is Wrong Please Check")
+-					si.place_of_supply=state_code_dict.get(str(state.lower()))
++					place_of_supply = state_code_dict.get(normalize_state_key(state))
++					if not place_of_supply:
++						raise Exception(f"State name Is Wrong Please Check: {state!r}")
++					si.place_of_supply = place_of_supply
+ 				si.taxes_and_charges = ""
+ 				si.custom_ecommerce_operator=self.ecommerce_mapping
+ 				si.custom_ecommerce_type=self.amazon_type
+@@ -2065,9 +2110,10 @@ class EcommerceBillImport(Document):
+ 				si.set_posting_time = 1
+ 				if i.customer_state:
+ 					state=i.customer_state
+-					if not state_code_dict.get(str(state.lower())):
+-						raise Exception(f"State name Is Wrong Please Check")
+-					si.place_of_supply=state_code_dict.get(str(state.lower()))
++					place_of_supply = state_code_dict.get(normalize_state_key(state))
++					if not place_of_supply:
++						raise Exception(f"State name Is Wrong Please Check: {state!r}")
++					si.place_of_supply = place_of_supply
+ 				# Parse the datetime and add 1 minute for returns
+ 				# refund_datetime = datetime.strptime(str(i.refund_date_time), '%Y-%m-%d %H:%M:%S') if isinstance(i.refund_date_time, str) else i.refund_date_time
+ 				# refund_datetime_plus_1min = refund_datetime + timedelta(minutes=1)
+@@ -2256,9 +2302,10 @@ class EcommerceBillImport(Document):
+ 					si.custom_ecommerce_type=self.amazon_type
+ 					if i.customers_billing_state:
+ 						state=i.customers_billing_state
+-						if not state_code_dict.get(str(state.lower())):
+-							raise Exception(f"State name Is Wrong Please Check")
+-						si.place_of_supply=state_code_dict.get(str(state.lower()))
++						place_of_supply = state_code_dict.get(normalize_state_key(state))
++						if not place_of_supply:
++							raise Exception(f"State name Is Wrong Please Check: {state!r}")
++						si.place_of_supply = place_of_supply
+ 					si.taxes_and_charges = ""
+ 					si.update_stock = 1
+ 					si.company_address = company_address
+@@ -2281,7 +2328,7 @@ class EcommerceBillImport(Document):
+ 							else:
+ 								si.append("taxes", {
+ 									"charge_type": "On Net Total",
+-									"rate":rate,
++									"rate": normalize_tax_rate(rate),
+ 									"account_head": acc_head,
+ 									"tax_amount": amount,
+ 									"description": tax_type
+@@ -2403,9 +2450,10 @@ class EcommerceBillImport(Document):
+ 				si.append("items", item_row)
+ 				if i.customers_billing_state:
+ 					state=i.customers_billing_state
+-					if not state_code_dict.get(str(state.lower())):
+-						raise Exception(f"State name Is Wrong Please Check")
+-					si.place_of_supply=state_code_dict.get(str(state.lower()))
++					place_of_supply = state_code_dict.get(normalize_state_key(state))
++					if not place_of_supply:
++						raise Exception(f"State name Is Wrong Please Check: {state!r}")
++					si.place_of_supply = place_of_supply
+ 				for tax_type, rate,amount, acc_head in [
+ 						("CGST", i.cgst_rate,flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
+ 						("SGST", i.sgst_rate_or_utgst_as_applicable,flt(i.sgst_amount_or_utgst_as_applicable), "Output Tax SGST - KGOPL"),
+@@ -2418,7 +2466,7 @@ class EcommerceBillImport(Document):
+ 							else:
+ 								si.append("taxes", {
+ 									"charge_type": "On Net Total",
+-									"rate":rate,
++									"rate": normalize_tax_rate(rate),
+ 									"account_head": acc_head,
+ 									"tax_amount": amount,
+ 									"description": tax_type
