@@ -19,40 +19,12 @@ from frappe.utils.file_manager import get_file_path
 from frappe.utils import flt, getdate
 
 def normalize_state_key(state):
-    """Normalize state strings to match `state_code_dict` keys.
-
-    Why: e-commerce reports often send inconsistent values like:
-    - "West Bengal ", "WEST  BENGAL", "West Bengal\r"
-    - "27-Maharashtra", "27 - Maharashtra"
-    - "Jammu & Kashmir" vs "Jammu and Kashmir"
-    """
     if not state:
         return ""
-
-    key = str(state).replace("\u00a0", " ")  # NBSP -> space
-    key = key.strip().lower()
-
-    # Drop leading state code prefix like "27-maharashtra" or "27 - maharashtra"
-    if len(key) >= 3 and key[:2].isdigit():
-        remainder = key[2:].lstrip(" -")
-        if remainder:
-            key = remainder
-
-    key = key.replace("&", "and")
-    key = key.replace("_", " ").replace("-", " ")
-    key = " ".join(key.split())  # collapse multiple spaces/newlines
+    key = str(state).strip().lower()
+    key = " ".join(key.split())      # collapse multiple spaces/newlines
+    key = key.replace("&", "and")    # optional, helps for "&" cases
     return key
-
-
-def normalize_tax_rate(rate):
-    """Normalize tax rate to the percentage ERPNext expects (e.g. 5 for 5%).
-
-    Some sources provide 0.05 (fraction) and some provide 5 (percent).
-    """
-    rate = flt(rate)
-    if 0 < rate < 1:
-        return rate * 100
-    return rate
 
 state_code_dict = {
     "jammu and kashmir": "01-Jammu and Kashmir",
@@ -680,6 +652,7 @@ class EcommerceBillImport(Document):
 
 				amazon = frappe.get_doc("Ecommerce Mapping", {"platform": "Amazon"})
 				error_log=[]
+				warehouse_mapping_missing = False
 				
 				if shipment_items:
 					exists_in_item = frappe.db.sql("""
@@ -733,8 +706,9 @@ class EcommerceBillImport(Document):
 								print("##########################",child_row.warehouse_id,warehouse)
 								if not warehouse:
 									print("##############################AJ",warehouse)
+									warehouse_mapping_missing = True
 									error_names.append(invoice_no)
-									raise Exception(f"Warehouse Mapping not found")
+									raise Exception(f"Warehouse Mapping not found for Warehouse Id: {child_row.warehouse_id}")
 
 								ecommerce_gstin = None
 								for gstin in amazon.ecommerce_gstin_mapping:
@@ -753,11 +727,10 @@ class EcommerceBillImport(Document):
 								if status!="Active":
 									if child_row.ship_to_state:
 										state=child_row.ship_to_state
-										place_of_supply = state_code_dict.get(normalize_state_key(state))
-										if not place_of_supply:
+										if not state_code_dict.get(str(state.lower())):
 											error_names.append(invoice_no)
-											raise Exception(f"State name Is Wrong Please Check: {state!r}")
-										si.place_of_supply = place_of_supply
+											raise Exception(f"State name Is Wrong Please Check")
+										si.place_of_supply=state_code_dict.get(str(state.lower()))
 
 								si.append("items", {
 									"item_code": itemcode,
@@ -786,7 +759,7 @@ class EcommerceBillImport(Document):
 												si.append("taxes", {
 													"charge_type": "On Net Total",
 													"account_head": acc_head,
-													"rate": normalize_tax_rate(rate),
+													"rate":rate,
 													"tax_amount": amount,
 													"description": tax_type
 												})
@@ -797,7 +770,7 @@ class EcommerceBillImport(Document):
 									"invoice_id": invoice_no,
 									"message": f"Shipment item error: {str(item_error)}"
 								})
-						if len(items_append)>0:
+						if len(items_append)>0 and not warehouse_mapping_missing:
 							si.save(ignore_permissions=True)
 							for j in si.items:
 								j.item_tax_template = ""
@@ -816,14 +789,14 @@ class EcommerceBillImport(Document):
 								"message": f"Shipment processing error: {str(ship_err)}"
 							})
 
-				if refund_items and existing_si_draft and not existing_si:
+				if refund_items and existing_si_draft and not existing_si and not warehouse_mapping_missing:
 					draft_si = frappe.get_doc("Sales Invoice", existing_si_draft)
 					if draft_si.custom_inv_no not in error_log:
 						draft_si.submit()
 						existing_si = draft_si.name
 
 				si_return_error=[]
-				if refund_items:
+				if refund_items and not warehouse_mapping_missing:
 					exists_in_item = frappe.db.sql("""
 						SELECT sii.name FROM `tabSales Invoice Item` sii
 						JOIN `tabSales Invoice` si ON sii.parent = si.name
@@ -877,8 +850,9 @@ class EcommerceBillImport(Document):
 										break
 
 								if not warehouse:
+									warehouse_mapping_missing = True
 									error_names.append(invoice_no)
-									raise Exception(f"Warehouse Mapping not found")
+									raise Exception(f"Warehouse Mapping not found for Warehouse Id: {child_row.warehouse_id}")
 
 								ecommerce_gstin = None
 								for gstin in amazon.ecommerce_gstin_mapping:
@@ -888,11 +862,10 @@ class EcommerceBillImport(Document):
 								if status!="Active":
 									if child_row.ship_to_state:
 										state=child_row.ship_to_state
-										place_of_supply = state_code_dict.get(normalize_state_key(state))
-										if not place_of_supply:
+										if not state_code_dict.get(str(state.lower())):
 											error_names.append(invoice_no)
-											raise Exception(f"State name Is Wrong Please Check: {state!r}")
-										si_return.place_of_supply = place_of_supply
+											raise Exception(f"State name Is Wrong Please Check")
+										si_return.place_of_supply=state_code_dict.get(str(state.lower()))
 
 								if not si_return.location:
 									si_return.location = location
@@ -905,8 +878,8 @@ class EcommerceBillImport(Document):
 
 								si_return.append("items", {
 									"item_code": itemcode,
-									"qty": -flt(child_row.quantity),
-									"rate": flt(child_row.tax_exclusive_gross)/flt(child_row.quantity),
+									"qty": -abs(flt(child_row.quantity)),
+									"rate": abs(flt(child_row.tax_exclusive_gross)) / abs(flt(child_row.quantity)),
 									"description": child_row.item_description,
 									"gst_hsn_code":hsn_code,
 									"warehouse": warehouse,
@@ -928,7 +901,7 @@ class EcommerceBillImport(Document):
 												si_return.append("taxes", {
 													"charge_type": "On Net Total",
 													"account_head": acc_head,
-													"rate": normalize_tax_rate(rate),
+													"rate":rate,
 													"tax_amount": amount,
 													"description": tax_type
 												})
@@ -940,7 +913,7 @@ class EcommerceBillImport(Document):
 									"invoice_id": invoice_no,
 									"message": f"Refund item error: {str(item_error)}"
 								})
-						if len(items_append)>0:
+						if len(items_append)>0 and not warehouse_mapping_missing:
 							si_return.save(ignore_permissions=True)
 							for j in si_return.items:
 								j.item_tax_template = ""
@@ -1028,6 +1001,7 @@ class EcommerceBillImport(Document):
 				existing_si_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 0}, "name")
 				existing_si = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 1}, "name")
 				amazon = frappe.get_doc("Ecommerce Mapping", {"platform": "Amazon"})
+				warehouse_mapping_missing = False
 
 				# -------- Shipment Items --------
 				if shipment_items:
@@ -1078,9 +1052,8 @@ class EcommerceBillImport(Document):
 									com_address = wh_map.erp_address
 									break
 							if not warehouse:
-								warehouse = amazon.default_company_warehouse
-								location = amazon.default_company_location
-								com_address = amazon.default_company_address
+								warehouse_mapping_missing = True
+								raise Exception(f"Warehouse Mapping not found for Warehouse Id: {child_row.warehouse_id}")
 
 							# ---- GSTIN Mapping ----
 							ecommerce_gstin = None
@@ -1095,11 +1068,10 @@ class EcommerceBillImport(Document):
 							si.company_address = com_address
 							if child_row.ship_to_state:
 								state = child_row.ship_to_state
-								place_of_supply = state_code_dict.get(normalize_state_key(state))
-								if not place_of_supply:
+								if not state_code_dict.get(str(state.lower())):
 									error_names.append(invoice_no)
-									raise Exception(f"State name Is Wrong Please Check: {state!r}")
-								si.place_of_supply = place_of_supply
+									raise Exception(f"State name Is Wrong Please Check")
+								si.place_of_supply = state_code_dict.get(str(state.lower()))
 							si.ecommerce_gstin = ecommerce_gstin
 
 							# ---- Append Item ----
@@ -1133,7 +1105,7 @@ class EcommerceBillImport(Document):
 										si.append("taxes", {
 											"charge_type": "On Net Total",
 											"account_head": acc_head,
-											"rate": normalize_tax_rate(rate),
+											"rate": rate * 100,
 											"tax_amount": amount,
 											"description": tax_type
 										})
@@ -1146,7 +1118,7 @@ class EcommerceBillImport(Document):
 							})
 
 					try:
-						if len(items_append) > 0:
+						if len(items_append) > 0 and not warehouse_mapping_missing:
 							si.save(ignore_permissions=True)
 							for j in si.items:
 								j.item_tax_template = ""
@@ -1166,7 +1138,7 @@ class EcommerceBillImport(Document):
 							})
 
 				# -------- Draft Submit Before Refund --------
-				if refund_items and existing_si_draft and not existing_si:
+				if refund_items and existing_si_draft and not existing_si and not warehouse_mapping_missing:
 					try:
 						draft_si = frappe.get_doc("Sales Invoice", existing_si_draft)
 						if invoice_no not in error_names:
@@ -1181,7 +1153,7 @@ class EcommerceBillImport(Document):
 						continue
 
 				# -------- Refund Items --------
-				if refund_items:
+				if refund_items and not warehouse_mapping_missing:
 					# if not existing_si:
 					# 	error_names.append(invoice_no)
 					# 	errors.append({
@@ -1238,9 +1210,8 @@ class EcommerceBillImport(Document):
 									com_address = wh_map.erp_address
 									break
 							if not warehouse:
-								warehouse = amazon.default_company_warehouse
-								location = amazon.default_company_location
-								com_address = amazon.default_company_address
+								warehouse_mapping_missing = True
+								raise Exception(f"Warehouse Mapping not found for Warehouse Id: {child_row.warehouse_id}")
 
 							ecommerce_gstin = None
 							for gstin in amazon.ecommerce_gstin_mapping:
@@ -1254,18 +1225,17 @@ class EcommerceBillImport(Document):
 							si_return.company_address = com_address
 							if child_row.ship_to_state:
 								state = child_row.ship_to_state
-								place_of_supply = state_code_dict.get(normalize_state_key(state))
-								if not place_of_supply:
+								if not state_code_dict.get(str(state.lower())):
 									si_error.append(invoice_no)
-									raise Exception(f"State name Is Wrong Please Check: {state!r}")
-								si_return.place_of_supply = place_of_supply
+									raise Exception(f"State name Is Wrong Please Check")
+								si_return.place_of_supply = state_code_dict.get(str(state.lower()))
 							si_return.ecommerce_gstin = ecommerce_gstin
 
 							hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
 							si_return.append("items", {
 								"item_code": itemcode,
-								"qty": -flt(child_row.quantity),
-								"rate": abs(flt(child_row.tax_exclusive_gross)) / flt(child_row.quantity),
+								"qty": -abs(flt(child_row.quantity)),
+								"rate": abs(flt(child_row.tax_exclusive_gross)) / abs(flt(child_row.quantity)),
 								"description": child_row.item_description,
 								"warehouse": warehouse,
 								"gst_hsn_code": hsn_code,
@@ -1290,7 +1260,7 @@ class EcommerceBillImport(Document):
 										si_return.append("taxes", {
 											"charge_type": "On Net Total",
 											"account_head": acc_head,
-											"rate": normalize_tax_rate(rate),
+											"rate": rate * 100,
 											"tax_amount": amount,
 											"description": tax_type
 										})
@@ -1303,7 +1273,7 @@ class EcommerceBillImport(Document):
 							})
 
 					try:
-						if len(ritems_append)>0:
+						if len(ritems_append)>0 and not warehouse_mapping_missing:
 							si_return.save(ignore_permissions=True)
 							for j in si_return.items:
 								j.item_tax_template = ""
@@ -1431,10 +1401,9 @@ class EcommerceBillImport(Document):
 						doc.company_address = wh.erp_address
 						if row.ship_to_state:
 							state=row.ship_to_state
-							place_of_supply = state_code_dict.get(normalize_state_key(state))
-							if not place_of_supply:
-								raise Exception(f"State name Is Wrong Please Check: {state!r}")
-							doc.place_of_supply = place_of_supply
+							if not state_code_dict.get(str(state.lower())):
+								raise Exception(f"State name Is Wrong Please Check")
+							doc.place_of_supply = state_code_dict.get(str(row.ship_to_state).lower())
 
 						doc.append("items", {
 							"item_code": item_code,
@@ -1458,7 +1427,7 @@ class EcommerceBillImport(Document):
 										doc.append("taxes", {
 											"charge_type": "On Net Total",
 											"account_head": acc_head,
-											"rate": normalize_tax_rate(rate),
+											"rate": rate * 100,
 											"tax_amount": amount,
 											"description": tax_type
 										})
@@ -1543,7 +1512,7 @@ class EcommerceBillImport(Document):
 										pi_doc.append("taxes", {
 											"charge_type": "On Net Total",
 											"account_head": acc_head,
-											"rate": normalize_tax_rate(rate),
+											"rate": rate * 100,
 											"tax_amount": amount,
 											"description": tax_type
 										})
@@ -1610,7 +1579,7 @@ class EcommerceBillImport(Document):
 			for wh in flipkart.ecommerce_warehouse_mapping:
 				if wh.ecom_warehouse_id == warehouse_id:
 					return wh.erp_warehouse, wh.location, wh.erp_address
-			return flipkart.default_company_warehouse, flipkart.default_company_location, flipkart.default_company_address
+			raise Exception(f"Warehouse Mapping not found for Warehouse Id: {warehouse_id}")
 
 		def get_gstin(seller_gstin):
 			for gst in flipkart.ecommerce_gstin_mapping:
@@ -1694,10 +1663,9 @@ class EcommerceBillImport(Document):
 					si.update_stock = 1
 					if i.customers_billing_state:
 						state=i.customers_billing_state
-						place_of_supply = state_code_dict.get(normalize_state_key(state))
-						if not place_of_supply:
-							raise Exception(f"State name Is Wrong Please Check: {state!r}")
-						si.place_of_supply = place_of_supply
+						if not state_code_dict.get(str(state.lower())):
+							raise Exception(f"State name Is Wrong Please Check")
+						si.place_of_supply=state_code_dict.get(str(state.lower()))
 					si.company_address = company_address
 					si.ecommerce_gstin = ecommerce_gstin
 					# if flt(i.cgst_amount)>0:
@@ -1720,7 +1688,7 @@ class EcommerceBillImport(Document):
 							else:
 								si.append("taxes", {
 									"charge_type": "On Net Total",
-									"rate": normalize_tax_rate(rate),
+									"rate":rate,
 									"account_head": acc_head,
 									"tax_amount": amount,
 									"description": tax_type
@@ -1814,9 +1782,9 @@ class EcommerceBillImport(Document):
 					"item_code": item_code,
 					"item_name": item_name,
 					"gst_hsn_code": hsn_code,
-					"qty": -flt(i.item_quantity),
-					"rate": flt(i.taxable_value)/flt(i.item_quantity),
-					"price_list_rate":flt(i.taxable_value)/flt(i.item_quantity),
+					"qty": -abs(flt(i.item_quantity)),
+					"rate": abs(flt(i.taxable_value)) / abs(flt(i.item_quantity)),
+					"price_list_rate": abs(flt(i.taxable_value)) / abs(flt(i.item_quantity)),
 					"description": i.product_titledescription,
 					"warehouse": warehouse,
 					"custom_ecom_item_id": i.order_item_id
@@ -1838,10 +1806,9 @@ class EcommerceBillImport(Document):
 				si.company_address = company_address
 				if i.customers_billing_state:
 					state=i.customers_billing_state
-					place_of_supply = state_code_dict.get(normalize_state_key(state))
-					if not place_of_supply:
-						raise Exception(f"State name Is Wrong Please Check: {state!r}")
-					si.place_of_supply = place_of_supply
+					if not state_code_dict.get(str(state.lower())):
+						raise Exception(f"State name Is Wrong Please Check")
+					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				si.ecommerce_gstin = ecommerce_gstin
 				si.location = location
 				si.is_return = 1
@@ -1865,7 +1832,7 @@ class EcommerceBillImport(Document):
 							else:
 								si.append("taxes", {
 									"charge_type": "On Net Total",
-									"rate": normalize_tax_rate(rate),
+									"rate":rate,
 									"account_head": acc_head,
 									"tax_amount": amount,
 									"description": tax_type
@@ -1984,10 +1951,9 @@ class EcommerceBillImport(Document):
 				si.custom_inv_no = i.order_item_id
 				if i.destination_address_state:
 					state=i.destination_address_state
-					place_of_supply = state_code_dict.get(normalize_state_key(state))
-					if not place_of_supply:
-						raise Exception(f"State name Is Wrong Please Check: {state!r}")
-					si.place_of_supply = place_of_supply
+					if not state_code_dict.get(str(state.lower())):
+						raise Exception(f"State name Is Wrong Please Check")
+					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				si.taxes_and_charges = ""
 				si.custom_ecommerce_operator=self.ecommerce_mapping
 				si.custom_ecommerce_type=self.amazon_type
@@ -2110,10 +2076,9 @@ class EcommerceBillImport(Document):
 				si.set_posting_time = 1
 				if i.customer_state:
 					state=i.customer_state
-					place_of_supply = state_code_dict.get(normalize_state_key(state))
-					if not place_of_supply:
-						raise Exception(f"State name Is Wrong Please Check: {state!r}")
-					si.place_of_supply = place_of_supply
+					if not state_code_dict.get(str(state.lower())):
+						raise Exception(f"State name Is Wrong Please Check")
+					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				# Parse the datetime and add 1 minute for returns
 				# refund_datetime = datetime.strptime(str(i.refund_date_time), '%Y-%m-%d %H:%M:%S') if isinstance(i.refund_date_time, str) else i.refund_date_time
 				# refund_datetime_plus_1min = refund_datetime + timedelta(minutes=1)
@@ -2138,7 +2103,7 @@ class EcommerceBillImport(Document):
 					"item_code": itemcode,
 					"gst_hsn_code": hsn_code if hsn_code else None,
 					"qty": -1,
-					"rate": flt(i.gmv)-tax_amt,
+					"rate": abs(flt(i.gmv) - tax_amt),
 					"description": i.product_name,
 					"warehouse": warehouse,
 					"income_account": amazon.income_account
@@ -2302,10 +2267,9 @@ class EcommerceBillImport(Document):
 					si.custom_ecommerce_type=self.amazon_type
 					if i.customers_billing_state:
 						state=i.customers_billing_state
-						place_of_supply = state_code_dict.get(normalize_state_key(state))
-						if not place_of_supply:
-							raise Exception(f"State name Is Wrong Please Check: {state!r}")
-						si.place_of_supply = place_of_supply
+						if not state_code_dict.get(str(state.lower())):
+							raise Exception(f"State name Is Wrong Please Check")
+						si.place_of_supply=state_code_dict.get(str(state.lower()))
 					si.taxes_and_charges = ""
 					si.update_stock = 1
 					si.company_address = company_address
@@ -2328,7 +2292,7 @@ class EcommerceBillImport(Document):
 							else:
 								si.append("taxes", {
 									"charge_type": "On Net Total",
-									"rate": normalize_tax_rate(rate),
+									"rate":rate,
 									"account_head": acc_head,
 									"tax_amount": amount,
 									"description": tax_type
@@ -2420,8 +2384,8 @@ class EcommerceBillImport(Document):
 				item_row = {
 					"item_code": item_code,
 					"item_name": item_name,
-					"qty": -flt(i.item_quantity),
-					"rate": flt(i.taxable_value),
+					"qty": -abs(flt(i.item_quantity)),
+					"rate": abs(flt(i.taxable_value)),
 					"gst_hsn_code": hsn_code,
 					"description": i.product_titledescription,
 					"warehouse": warehouse,
@@ -2450,10 +2414,9 @@ class EcommerceBillImport(Document):
 				si.append("items", item_row)
 				if i.customers_billing_state:
 					state=i.customers_billing_state
-					place_of_supply = state_code_dict.get(normalize_state_key(state))
-					if not place_of_supply:
-						raise Exception(f"State name Is Wrong Please Check: {state!r}")
-					si.place_of_supply = place_of_supply
+					if not state_code_dict.get(str(state.lower())):
+						raise Exception(f"State name Is Wrong Please Check")
+					si.place_of_supply=state_code_dict.get(str(state.lower()))
 				for tax_type, rate,amount, acc_head in [
 						("CGST", i.cgst_rate,flt(i.cgst_amount), "Output Tax CGST - KGOPL"),
 						("SGST", i.sgst_rate_or_utgst_as_applicable,flt(i.sgst_amount_or_utgst_as_applicable), "Output Tax SGST - KGOPL"),
@@ -2466,7 +2429,7 @@ class EcommerceBillImport(Document):
 							else:
 								si.append("taxes", {
 									"charge_type": "On Net Total",
-									"rate": normalize_tax_rate(rate),
+									"rate":rate,
 									"account_head": acc_head,
 									"tax_amount": amount,
 									"description": tax_type
