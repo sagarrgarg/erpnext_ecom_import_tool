@@ -839,10 +839,9 @@ class EcommerceBillImport(Document):
 						# 		"message": f"Refund requested but original submitted invoice not found for {invoice_no}."
 						# 	})
 
-						si_return = frappe.new_doc("Sales Invoice")
-						si_return.is_return = 1
-						si_return.return_against = existing_si
-						si_return.custom_ecommerce_operator=self.ecommerce_mapping
+					si_return = frappe.new_doc("Sales Invoice")
+					si_return.is_return = 1
+					si_return.custom_ecommerce_operator=self.ecommerce_mapping
 						si_return.custom_ecommerce_type=self.amazon_type
 						si_return.customer = customer
 						si_return.set_posting_time=1
@@ -1190,7 +1189,6 @@ class EcommerceBillImport(Document):
 					ritems_append = []
 					si_return = frappe.new_doc("Sales Invoice")
 					si_return.is_return = 1
-					si_return.return_against = existing_si
 					si_return.customer = val
 					si_return.set_posting_time=1
 
@@ -1859,8 +1857,6 @@ class EcommerceBillImport(Document):
 				if draft_name:
 					si = frappe.get_doc("Sales Invoice", draft_name)
 					si.is_return = 1
-					if not si.return_against:
-						si.return_against = original_inv
 				else:
 					first = rows[0]
 					warehouse, location, company_address = get_warehouse_info(first.warehouse_id)
@@ -1884,7 +1880,6 @@ class EcommerceBillImport(Document):
 					si.ecommerce_gstin = ecommerce_gstin
 					si.location = location
 					si.is_return = 1
-					si.return_against = original_inv
 					si.custom_ecommerce_invoice_id = first.buyer_invoice_id
 					si.__newname = first.buyer_invoice_id
 
@@ -2566,8 +2561,6 @@ class EcommerceBillImport(Document):
 				if draft_name:
 					si = frappe.get_doc("Sales Invoice", draft_name)
 					si.is_return = 1
-					if not si.return_against:
-						si.return_against = original_inv
 				else:
 					first = rows[0]
 					ecommerce_gstin = get_gstin(first.seller_gstin)
@@ -2585,7 +2578,6 @@ class EcommerceBillImport(Document):
 					si.ecommerce_gstin = ecommerce_gstin
 					si.location = location
 					si.is_return = 1
-					si.return_against = original_inv
 					si.custom_ecommerce_invoice_id = first.buyer_invoice_id
 					si.__newname = first.buyer_invoice_id
 					if first.customers_billing_state:
