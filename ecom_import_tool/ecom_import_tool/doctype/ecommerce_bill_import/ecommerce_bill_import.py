@@ -839,9 +839,9 @@ class EcommerceBillImport(Document):
 						# 		"message": f"Refund requested but original submitted invoice not found for {invoice_no}."
 						# 	})
 
-					si_return = frappe.new_doc("Sales Invoice")
-					si_return.is_return = 1
-					si_return.custom_ecommerce_operator=self.ecommerce_mapping
+						si_return = frappe.new_doc("Sales Invoice")
+						si_return.is_return = 1
+						si_return.custom_ecommerce_operator=self.ecommerce_mapping
 						si_return.custom_ecommerce_type=self.amazon_type
 						si_return.customer = customer
 						si_return.set_posting_time=1
