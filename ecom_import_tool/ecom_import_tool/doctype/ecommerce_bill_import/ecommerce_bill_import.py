@@ -1845,8 +1845,8 @@ class EcommerceBillImport(Document):
 					"is_return": 0,
 					"docstatus": 1
 				}, "name")
-				if not original_inv:
-					raise Exception(f"Original invoice not found or not submitted for Order ID: {invoice_key}")
+				# if not original_inv:
+				# 	raise Exception(f"Original invoice not found or not submitted for Order ID: {invoice_key}")
 
 				draft_name = frappe.db.get_value("Sales Invoice", {
 					"custom_inv_no": invoice_key,
@@ -2547,8 +2547,8 @@ class EcommerceBillImport(Document):
 					"is_return": 0,
 					"docstatus": 1
 				}, "name")
-				if not original_inv:
-					raise Exception(f"Original invoice not found or not submitted for Invoice ID: {invoice_key}")
+				# if not original_inv:
+				# 	raise Exception(f"Original invoice not found or not submitted for Invoice ID: {invoice_key}")
 
 				draft_name = frappe.db.get_value("Sales Invoice", {
 					"custom_inv_no": invoice_key,
