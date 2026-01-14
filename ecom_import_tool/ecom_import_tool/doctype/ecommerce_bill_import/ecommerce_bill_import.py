@@ -797,6 +797,7 @@ class EcommerceBillImport(Document):
 							si.save(ignore_permissions=True)
 						if invoice_no not in error_log:
 							si.submit()
+							frappe.db.commit()
 							existing_si = si.name
 							success_count += len(shipment_items)
 						
@@ -812,6 +813,7 @@ class EcommerceBillImport(Document):
 					draft_si = frappe.get_doc("Sales Invoice", existing_si_draft)
 					if draft_si.custom_inv_no not in error_log:
 						draft_si.submit()
+						frappe.db.commit()
 						existing_si = draft_si.name
 
 				si_return_error=[]
@@ -940,6 +942,7 @@ class EcommerceBillImport(Document):
 
 						if invoice_no not in si_return_error:
 							si_return.submit()
+							frappe.db.commit()
 							success_count += len(refund_items)
 					except Exception as refund_err:
 						for idx, _ in refund_items:
@@ -964,6 +967,8 @@ class EcommerceBillImport(Document):
 				{"progress": percent, "message": f"Processed {count}/{total_invoices} invoices"},
 				user=frappe.session.user
 			)
+			# Commit after each invoice to reduce memory load
+			frappe.db.commit()
 
 		# -------- Final Summary --------
 		if errors:
@@ -1151,6 +1156,7 @@ class EcommerceBillImport(Document):
 
 							if invoice_no not in error_names:
 								si.submit()
+								frappe.db.commit()
 								existing_si = si.name
 								success_count += len(shipment_items)
 					except Exception as submit_error:
@@ -1167,6 +1173,7 @@ class EcommerceBillImport(Document):
 						draft_si = frappe.get_doc("Sales Invoice", existing_si_draft)
 						if invoice_no not in error_names:
 							draft_si.submit()
+							frappe.db.commit()
 							existing_si = draft_si.name
 					except Exception as e:
 						errors.append({
@@ -1311,6 +1318,7 @@ class EcommerceBillImport(Document):
 
 							if invoice_no not in si_error:
 								si_return.submit()
+								frappe.db.commit()
 								success_count += len(refund_items)
 					except Exception as submit_error:
 						for idx, _ in refund_items:
@@ -1330,6 +1338,8 @@ class EcommerceBillImport(Document):
 
 			# ---- 🔹 Update realtime progress ----
 			update_progress(count, total_invoices, f"Processed {count}/{total_invoices} invoices")
+			# Commit after each invoice to reduce memory load
+			frappe.db.commit()
 
 		# -------- Final Summary --------
 		if errors:
@@ -1468,6 +1478,7 @@ class EcommerceBillImport(Document):
 
 					doc.save(ignore_permissions=True)
 					doc.submit()
+					frappe.db.commit()
 					success_count += len(group_rows)
 					frappe.msgprint(f"{doc.doctype} {doc.name} created for Invoice No {invoice_no}")
 
@@ -1554,6 +1565,7 @@ class EcommerceBillImport(Document):
 					# pi_doc.save(ignore_permissions=True)
 					# print("####################################666",)
 					pi_doc.submit()
+					frappe.db.commit()
 
 			except Exception as e:
 				for idx, row in group_rows:
@@ -1797,10 +1809,20 @@ class EcommerceBillImport(Document):
 						"message": str(e)
 					})
 
+			# 🔹 Progress update after each sale invoice group
+			percent = int((sale_count / total_sale_invoices) * 50)  # Sales take first 50% of progress
+			frappe.publish_realtime(
+				"data_import_progress",
+				{"progress": percent, "message": f"Processed {sale_count}/{total_sale_invoices} sale invoices"},
+				user=frappe.session.user
+			)
+			frappe.db.commit()
+
 		# Submit Sales Invoices
 		for sii in si_invoice:
 			try:
 				frappe.get_doc("Sales Invoice", sii).submit()
+				frappe.db.commit()
 			except Exception as e:
 				errors.append({
 					"idx": "",
@@ -1839,14 +1861,6 @@ class EcommerceBillImport(Document):
 				}, "name")
 				if existing_return:
 					continue
-
-				original_inv = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": invoice_key,
-					"is_return": 0,
-					"docstatus": 1
-				}, "name")
-				# if not original_inv:
-				# 	raise Exception(f"Original invoice not found or not submitted for Order ID: {invoice_key}")
 
 				draft_name = frappe.db.get_value("Sales Invoice", {
 					"custom_inv_no": invoice_key,
@@ -1990,10 +2004,20 @@ class EcommerceBillImport(Document):
 						"message": str(e)
 					})
 
+			# 🔹 Progress update after each return invoice group
+			percent = 50 + int((return_count / total_return_invoices) * 50)  # Returns take last 50% of progress
+			frappe.publish_realtime(
+				"data_import_progress",
+				{"progress": percent, "message": f"Processed {return_count}/{total_return_invoices} return invoices"},
+				user=frappe.session.user
+			)
+			frappe.db.commit()
+
 		# Submit Return Invoices
 		for sii in return_invoice:
 			try:
 				frappe.get_doc("Sales Invoice", sii).submit()
+				frappe.db.commit()
 			except Exception as e:
 				errors.append({
 					"idx": "",
@@ -2032,8 +2056,19 @@ class EcommerceBillImport(Document):
 		val = frappe.db.get_value("Ecommerce Mapping", {"platform": "Cred"}, "default_non_company_customer")
 		amazon = frappe.get_doc("Ecommerce Mapping", {"name": "Cred"})
 
+		total_cred_items = len(self.cred) or 1
+		cred_count = 0
+
+		# 🔹 Initial progress update
+		frappe.publish_realtime(
+			"data_import_progress",
+			{"progress": 0, "message": f"Starting CRED import (0/{total_cred_items})"},
+			user=frappe.session.user
+		)
+
 		# Shipment Invoice
 		for i in self.cred:
+			cred_count += 1
 			try:
 				if i.order_status in ["CANCELLED", "RTO"]:
 					continue
@@ -2133,7 +2168,16 @@ class EcommerceBillImport(Document):
 				si.due_date = getdate(today())
 
 				si.save(ignore_permissions=True)
+				frappe.db.commit()
 				si_items.append(si.name)
+
+				# 🔹 Progress update after each invoice
+				percent = int((cred_count / total_cred_items) * 50)  # Shipments take first 50%
+				frappe.publish_realtime(
+					"data_import_progress",
+					{"progress": percent, "message": f"Processed {cred_count}/{total_cred_items} shipment invoices"},
+					user=frappe.session.user
+				)
 
 			except Exception as e:
 				errors.append({
@@ -2147,6 +2191,7 @@ class EcommerceBillImport(Document):
 			try:
 				doc = frappe.get_doc("Sales Invoice", si)
 				doc.submit()
+				frappe.db.commit()
 			except Exception as e:
 				errors.append({
 					"idx": None,
@@ -2156,7 +2201,18 @@ class EcommerceBillImport(Document):
 				})
 
 		# Return Invoice
+		total_return_items = len(self.cred_items) or 1
+		return_count = 0
+
+		# 🔹 Progress update for returns (starts at 50%)
+		frappe.publish_realtime(
+			"data_import_progress",
+			{"progress": 50, "message": f"Starting Returns (0/{total_return_items})"},
+			user=frappe.session.user
+		)
+
 		for i in self.cred_items:
+			return_count += 1
 			try:
 				if i.order_status in ["CANCELLED", "RTO"]:
 					continue
@@ -2263,7 +2319,16 @@ class EcommerceBillImport(Document):
 					j.item_tax_rate = frappe._dict()
 				si.due_date=getdate(today())
 				si.save(ignore_permissions=True)
+				frappe.db.commit()
 				si_return_items.append(si.name)
+
+				# 🔹 Progress update after each return invoice
+				percent = 50 + int((return_count / total_return_items) * 50)  # Returns take last 50%
+				frappe.publish_realtime(
+					"data_import_progress",
+					{"progress": percent, "message": f"Processed {return_count}/{total_return_items} return invoices"},
+					user=frappe.session.user
+				)
 
 			except Exception as e:
 				errors.append({
@@ -2277,6 +2342,7 @@ class EcommerceBillImport(Document):
 			try:
 				doc = frappe.get_doc("Sales Invoice", si)
 				doc.submit()
+				frappe.db.commit()
 			except Exception as e:
 				errors.append({
 					"idx": None,
@@ -2284,6 +2350,13 @@ class EcommerceBillImport(Document):
 					"event": "Submit Return",
 					"message": e
 				})
+
+		# 🔹 Final progress update
+		frappe.publish_realtime(
+			"data_import_progress",
+			{"progress": 100, "message": "CRED Import Completed ✅"},
+			user=frappe.session.user
+		)
 
 		# Save all errors in test_json
 		if errors:
@@ -2344,7 +2417,18 @@ class EcommerceBillImport(Document):
 
 			sale_groups.setdefault(invoice_key, []).append(row)
 
+		total_sale_invoices = len(sale_groups) or 1
+		sale_count = 0
+
+		# 🔹 Initial progress update for sales
+		frappe.publish_realtime(
+			"data_import_progress",
+			{"progress": 0, "message": f"Starting JioMart import - Sales (0/{total_sale_invoices})"},
+			user=frappe.session.user
+		)
+
 		for invoice_key, rows in sale_groups.items():
+			sale_count += 1
 			group_errors = False
 			items_appended = 0
 
@@ -2499,10 +2583,20 @@ class EcommerceBillImport(Document):
 						"message": str(e)
 					})
 
+			# 🔹 Progress update after each sale invoice group
+			percent = int((sale_count / total_sale_invoices) * 50)  # Sales take first 50% of progress
+			frappe.publish_realtime(
+				"data_import_progress",
+				{"progress": percent, "message": f"Processed {sale_count}/{total_sale_invoices} sale invoices"},
+				user=frappe.session.user
+			)
+			frappe.db.commit()
+
 		# Submit Sales Invoices
 		for sii in si_invoice:
 			try:
 				frappe.get_doc("Sales Invoice", sii).submit()
+				frappe.db.commit()
 			except Exception as e:
 				errors.append({
 					"idx": "",
@@ -2529,7 +2623,18 @@ class EcommerceBillImport(Document):
 
 			return_groups.setdefault(invoice_key, []).append(row)
 
+		total_return_invoices = len(return_groups) or 1
+		return_count = 0
+
+		# 🔹 Progress update for returns (starts at 50%)
+		frappe.publish_realtime(
+			"data_import_progress",
+			{"progress": 50, "message": f"Starting Returns (0/{total_return_invoices})"},
+			user=frappe.session.user
+		)
+
 		for invoice_key, rows in return_groups.items():
+			return_count += 1
 			group_errors = False
 			items_appended = 0
 
@@ -2541,14 +2646,6 @@ class EcommerceBillImport(Document):
 				}, "name")
 				if existing_return:
 					continue
-
-				original_inv = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": invoice_key,
-					"is_return": 0,
-					"docstatus": 1
-				}, "name")
-				# if not original_inv:
-				# 	raise Exception(f"Original invoice not found or not submitted for Invoice ID: {invoice_key}")
 
 				draft_name = frappe.db.get_value("Sales Invoice", {
 					"custom_inv_no": invoice_key,
@@ -2692,10 +2789,20 @@ class EcommerceBillImport(Document):
 						"message": str(e)
 					})
 
+			# 🔹 Progress update after each return invoice group
+			percent = 50 + int((return_count / total_return_invoices) * 50)  # Returns take last 50% of progress
+			frappe.publish_realtime(
+				"data_import_progress",
+				{"progress": percent, "message": f"Processed {return_count}/{total_return_invoices} return invoices"},
+				user=frappe.session.user
+			)
+			frappe.db.commit()
+
 		# Submit Return Invoices
 		for sii in return_invoice:
 			try:
 				frappe.get_doc("Sales Invoice", sii).submit()
+				frappe.db.commit()
 			except Exception as e:
 				errors.append({
 					"idx": "",
@@ -2703,6 +2810,13 @@ class EcommerceBillImport(Document):
 					"event": "Return",
 					"message": f"Submit failed: {str(e)}"
 				})
+
+		# 🔹 Final progress update
+		frappe.publish_realtime(
+			"data_import_progress",
+			{"progress": 100, "message": "JioMart Import Completed ✅"},
+			user=frappe.session.user
+		)
 
 		self.error_json = str(json.dumps(errors))
 		if len(errors) == 0:
