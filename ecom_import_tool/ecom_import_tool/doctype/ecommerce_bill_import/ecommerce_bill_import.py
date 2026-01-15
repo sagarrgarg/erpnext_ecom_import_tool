@@ -1637,13 +1637,13 @@ class EcommerceBillImport(Document):
 			if row.event_sub_type != "Sale":
 				continue
 
-			invoice_key = row.order_id
+			invoice_key = row.buyer_invoice_id
 			if not invoice_key:
 				errors.append({
 					"idx": row.idx,
 					"invoice_id": row.buyer_invoice_id,
 					"event": row.event_sub_type,
-					"message": "Missing Order ID (order_id) for Sale row"
+					"message": "Missing Buyer Invoice ID (buyer_invoice_id) for Sale row"
 				})
 				continue
 
@@ -1837,13 +1837,13 @@ class EcommerceBillImport(Document):
 			if row.event_sub_type != "Return":
 				continue
 
-			invoice_key = row.order_id
+			invoice_key = row.buyer_invoice_id
 			if not invoice_key:
 				errors.append({
 					"idx": row.idx,
 					"invoice_id": row.buyer_invoice_id,
 					"event": row.event_sub_type,
-					"message": "Missing Order ID (order_id) for Return row"
+					"message": "Missing Buyer Invoice ID (buyer_invoice_id) for Return row"
 				})
 				continue
 
