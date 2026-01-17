@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:mapping_name",
  "creation": "2025-04-17 02:49:40.058342",
@@ -139,7 +140,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-07-06 23:47:14.056407",
+ "modified": "2026-01-18 04:22:44.857086",
  "modified_by": "Administrator",
  "module": "Ecom Import Tool",
  "name": "Ecommerce Mapping",

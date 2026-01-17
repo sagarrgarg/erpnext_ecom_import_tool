@@ -491,90 +491,92 @@ class EcommerceBillImport(Document):
 				
 	
 	def cred_append(self):
+		"""Parse the attached CRED file.
+
+		CRED has evolved over time (older Excel exports vs newer CSV exports). For CSV,
+		we intentionally DO NOT populate the hidden child tables to avoid heavy document
+		payloads; invoice creation reads the CSV directly in the background job.
+		"""
 		self.cred_items = []
-		self.cred=[]
-		if self.cred_attach:
-			import pandas as pd
-			import numpy as np
-			import frappe
-			from frappe.utils.file_manager import get_file_path
-			import os
+		self.cred = []
+		if not self.cred_attach:
+			return
 
-			# Helper function to clean and convert Excel values
-			def clean(val):
-				if pd.isna(val):
-					return ""
+		import os
+		from frappe.utils.file_manager import get_file_path
 
-				# Convert Excel serial to date string if in valid range
-				if isinstance(val, (int, float)) and 30000 < val < 50000:
-					try:
-						return (datetime(1899, 12, 30) + timedelta(days=val)).strftime("%Y-%m-%d")
-					except:
-						pass
+		file_url = self.cred_attach
+		filename = file_url.split("/files/")[-1]
+		file_path = get_file_path(filename)
 
-				# If it's already a datetime object
-				if isinstance(val, datetime):
-					return val.strftime("%Y-%m-%d")
+		if not os.path.exists(file_path):
+			frappe.throw(f"File not found at path: {file_path}")
 
+		ext = os.path.splitext(filename)[1].lower()
+		if ext != ".csv":
+			frappe.throw("Please upload the CRED export in CSV format (.csv).")
+
+		ext = os.path.splitext(filename)[1].lower()
+		if ext == ".csv":
+			# Validate CSV is readable and count rows (optional)
+			try:
+				df = pd.read_csv(
+					file_path,
+					dtype=str,
+					keep_default_na=False,
+					na_filter=False,
+				)
+			except Exception as e:
+				frappe.throw(f"Error reading CRED CSV: {str(e)}")
+
+			self.payload_count = len(df)
+			return
+
+		# ---------------- Legacy Excel (kept for backward compatibility) ----------------
+		import os
+
+		# Helper function to clean and convert Excel values
+		def clean(val):
+			if pd.isna(val):
+				return ""
+
+			# Convert Excel serial to date string if in valid range
+			if isinstance(val, (int, float)) and 30000 < val < 50000:
 				try:
-					return str(val).strip()
+					return (datetime(1899, 12, 30) + timedelta(days=val)).strftime("%Y-%m-%d")
 				except Exception:
-					return str(val)
+					pass
 
-			xl_file_url = self.cred_attach
-			filename = xl_file_url.split('/files/')[-1]
+			# If it's already a datetime object
+			if isinstance(val, datetime):
+				return val.strftime("%Y-%m-%d")
 
-			xl_file_path = get_file_path(filename)
+			try:
+				return str(val).strip()
+			except Exception:
+				return str(val)
 
-			if not os.path.exists(xl_file_path):
-				frappe.throw(f"File not found at path: {xl_file_path}")
+		# Read Excel file using appropriate sheet rows
+		df = pd.read_excel(file_path, sheet_name=1)
+		df2 = pd.read_excel(file_path, sheet_name=0)
 
-			# Read Excel file using appropriate header row
-			df = pd.read_excel(xl_file_path, sheet_name=1)
-			df2 = pd.read_excel(xl_file_path, sheet_name=0)
+		# Map sheet-1 -> cred_items (returns), sheet-0 -> cred (sales)
+		return_child_doctype = frappe.get_meta(self.doctype).get_field("cred_items").options
+		return_meta = frappe.get_meta(return_child_doctype)
+		return_fields = {f.fieldname for f in return_meta.fields}
 
-			# Get child table doctype name
-			child_doctype = None
-			for field in frappe.get_meta(self.doctype).fields:
-				if field.fieldname == 'cred_items':
-					child_doctype = field.options
-					break
+		for _, row in df.iterrows():
+			child_row = self.append("cred_items", {})
+			for column_name in df.columns:
+				fieldname = column_name.strip().lower().replace(" ", "_")
+				if fieldname in return_fields:
+					child_row.set(fieldname, clean(row[column_name]))
 
-			if not child_doctype:
-				frappe.throw("Could not find child table doctype for 'cred_items'")
-
-
-			# Get child table fields
-			child_meta = frappe.get_meta(child_doctype)
-			valid_fields = [field.fieldname for field in child_meta.fields]
-
-			success_count = 0
-			for index, row in df.iterrows():
-
-				child_row = self.append("cred_items", {})
-				mapped_count = 0
-
-				for column_name in df.columns:
-					fieldname = column_name.strip().lower().replace(' ', '_')
-					value = row[column_name]
-
-					if fieldname in valid_fields:
-						child_row.set(fieldname, clean(value))
-						mapped_count += 1
-				if mapped_count > 0:
-					success_count += 1
-			for index, row in df2.iterrows():
-				child_row2 = self.append("cred", {})
-				mapped_count = 0
-				for column_name in df2.columns:
-					fieldname = column_name.strip().lower().replace(' ', '_')
-					value = row[column_name]
-					child_row2.set(fieldname, clean(value))
-					mapped_count += 1
-
-				if mapped_count > 0:
-					success_count += 1
-			# Mapping summary intentionally not printed to stdout (keeps background worker logs clean)
+		for _, row in df2.iterrows():
+			child_row = self.append("cred", {})
+			for column_name in df2.columns:
+				fieldname = column_name.strip().lower().replace(" ", "_")
+				child_row.set(fieldname, clean(row[column_name]))
 
 	def append_flipkart(self):
 		import pandas as pd
@@ -2471,343 +2473,422 @@ class EcommerceBillImport(Document):
 
 		
 	def create_cred_sales_invoice(self):
-		
+		"""Create Sales Invoices from the CRED CSV export.
 
-		from frappe.utils import flt, getdate
+		This implementation is based on the CRED CSV columns you shared:
+		- Uses **EE Invoice No** (fallback Invoice_id/Suborder No) to group rows into one Sales Invoice
+		- Sets invoice datetime from **Printed At** (fallback **Confirmed At**, then Invoice Date/Order Date)
+		- Uses **Item Quantity** + **Item Price Excluding Tax** to build per-unit rate
+		- Adds GST taxes using provided **tax** / **Tax Rate** values
+
+		We parse the CSV inside the background job (RQ worker) to avoid bloating the parent
+		document with hidden child tables.
+		"""
+		import os
+		import re
+		import pandas as pd
+		from frappe.utils.file_manager import get_file_path
+		from frappe.utils import get_datetime
 
 		errors = []
-		si_items = []
-		si_return_items = []
 
-		val = frappe.db.get_value("Ecommerce Mapping", {"platform": "Cred"}, "default_non_company_customer")
-		amazon = frappe.get_doc("Ecommerce Mapping", {"name": "Cred"})
+		if not self.cred_attach:
+			frappe.throw("Please attach the CRED CSV file.")
 
-		total_cred_items = len(self.cred) or 1
-		cred_count = 0
+		file_url = self.cred_attach
+		filename = file_url.split("/files/")[-1]
+		file_path = get_file_path(filename)
 
-		# 🔹 Initial progress update
+		if not os.path.exists(file_path):
+			frappe.throw(f"File not found at path: {file_path}")
+
+		# --- Load mapping and customer ---
+		cred_mapping = frappe.get_doc("Ecommerce Mapping", {"name": "Cred"})
+		customer = frappe.db.get_value(
+			"Ecommerce Mapping", {"platform": "Cred"}, "default_non_company_customer"
+		)
+		if not customer:
+			frappe.throw("Default Non Company Customer is not set in Ecommerce Mapping for Cred.")
+
+		# --- Read CSV as strings (prevents scientific notation / precision loss) ---
+		try:
+			df = pd.read_csv(
+				file_path,
+				dtype=str,
+				keep_default_na=False,
+				na_filter=False,
+			)
+		except Exception as e:
+			frappe.throw(f"Error reading CRED CSV: {str(e)}")
+
+		def normalize_col(col_name: str) -> str:
+			col_name = (str(col_name) or "").strip().lower()
+			col_name = re.sub(r"[^a-z0-9]+", "_", col_name).strip("_")
+			return col_name
+
+		col_map = {normalize_col(c): c for c in df.columns}
+
+		def get_cell(row, key: str) -> str:
+			col = col_map.get(key)
+			if not col:
+				return ""
+			return clean_csv_cell(row.get(col))
+
+		def parse_dt(value: str):
+			value = clean_csv_cell(value)
+			if not value:
+				return None
+			# CRED examples: "05/12/25 15:18"
+			for fmt in (
+				"%d/%m/%y %H:%M",
+				"%d/%m/%Y %H:%M",
+				"%d/%m/%y %H:%M:%S",
+				"%d/%m/%Y %H:%M:%S",
+				"%d/%m/%y",
+				"%d/%m/%Y",
+			):
+				try:
+					return datetime.strptime(value, fmt)
+				except Exception:
+					pass
+			try:
+				return get_datetime(value)
+			except Exception:
+				return None
+
+		def parse_rate(rate_str):
+			rate = flt(rate_str)
+			# Sometimes exporters use 0.05 instead of 5
+			if 0 < rate < 1:
+				rate = rate * 100
+			return rate
+
+		def get_place_of_supply(state_name: str):
+			key = normalize_state_key(state_name)
+			return state_code_dict.get(key)
+
+		def resolve_invoice_datetime(row):
+			# Keep Printed At as invoice datetime; fallback Confirmed At (as requested)
+			return (
+				parse_dt(get_cell(row, "printed_at"))
+				or parse_dt(get_cell(row, "confirmed_at"))
+				or parse_dt(get_cell(row, "invoice_date"))
+				or parse_dt(get_cell(row, "order_date"))
+			)
+
+		def get_invoice_no(row):
+			return (
+				# Prefer Invoice_id (stable internal id), fallback to EE Invoice No
+				get_cell(row, "invoice_id")
+				or get_cell(row, "ee_invoice_no")
+				or get_cell(row, "suborder_no")
+				or get_cell(row, "reference_code")
+			)
+
+		def is_cancelled_row(row):
+			status = get_cell(row, "order_status").upper()
+			ship_status = get_cell(row, "shipping_status").upper()
+			cancelled_at = get_cell(row, "cancelled_at")
+			return (
+				status in {"CANCELLED", "CANCELED", "RTO"}
+				or ship_status in {"CANCELLED", "CANCELED", "RTO"}
+				or bool(cancelled_at)
+			)
+
+		# --- Build invoice groups ---
+		invoice_groups = {}
+		for row_idx, row in df.iterrows():
+			if is_cancelled_row(row):
+				continue
+
+			invoice_no = get_invoice_no(row)
+			if not invoice_no:
+				continue
+
+			invoice_groups.setdefault(invoice_no, []).append((row_idx + 1, row))
+
+		expected_invoices = len(invoice_groups)
+		total_invoices = expected_invoices or 1
+
 		self._publish_progress(
 			current=0,
-			total=total_cred_items,
+			total=total_invoices,
 			progress=0,
-			message=f"Starting CRED import (0/{total_cred_items})",
+			message=f"Starting CRED import (0/{total_invoices})",
 			phase="cred_shipments",
 		)
 
-		# Shipment Invoice
-		for i in self.cred:
-			cred_count += 1
+		success_invoices = 0
+
+		def get_item_code(ecom_sku: str):
+			for row in cred_mapping.ecom_item_table:
+				if row.ecom_item_id == ecom_sku:
+					return row.erp_item
+			return None
+
+		def resolve_sku_for_mapping(row):
+			# Allow Ecommerce Mapping to specify which CSV column is the SKU key
+			configured = (cred_mapping.ecom_sku_column_header or "").strip()
+			if configured:
+				configured_key = normalize_col(configured)
+				value = get_cell(row, configured_key)
+				if value:
+					return value
+
+			# Fallbacks (common CRED CSV columns)
+			return (
+				get_cell(row, "accounting_sku")
+				or get_cell(row, "sku")
+				or get_cell(row, "marketplace_sku")
+				or get_cell(row, "listing_ref_no")
+			)
+
+		for count, (invoice_no, rows) in enumerate(invoice_groups.items(), start=1):
 			try:
-				if i.order_status in ["CANCELLED", "RTO"]:
+				existing_submitted = frappe.db.get_value(
+					"Sales Invoice",
+					{"custom_inv_no": invoice_no, "is_return": 0, "docstatus": 1},
+					"name",
+				)
+				if existing_submitted:
+					percent = int((count / total_invoices) * 100)
+					self._publish_progress(
+						current=count,
+						total=total_invoices,
+						progress=percent,
+						message=f"Processed {count}/{total_invoices} invoices (skipped existing)",
+						phase="cred_shipments",
+					)
 					continue
 
-				si_inv = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.order_item_id, "is_return": 0, "docstatus": 1}, "name")
-				if si_inv:
-					errors.append({
-						"idx": i.idx,
-						"invoice_id": i.order_item_id,
-						"event": "Invoice Already Exist",
-						"message": "Invoice Already Exist"
-					})
-					continue
-				si_inv_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.order_item_id, "is_return": 0, "docstatus": 0}, "name")
+				draft_name = frappe.db.get_value(
+					"Sales Invoice",
+					{"custom_inv_no": invoice_no, "is_return": 0, "docstatus": 0},
+					"name",
+				)
 
-				itemcode = next((jk.erp_item for jk in amazon.ecom_item_table if jk.ecom_item_id == i.get(str(amazon.ecom_sku_column_header))), None)
-				warehouse_data = next((kk for kk in amazon.ecommerce_warehouse_mapping if kk.ecom_warehouse_id == i.warehouse_location_code), None)
-				if not itemcode or not warehouse_data:
-					errors.append({
-						"idx": i.idx,
-						"invoice_id": i.order_item_id,
-						"event": "Create Shipment",
-						"message": "Missing item code or warehouse mapping"
-					})
-					continue
+				first_idx, first_row = rows[0]
+				seller_gstin = get_cell(first_row, "seller_gst_num") or get_cell(first_row, "seller_gst_num")
+				if not seller_gstin:
+					raise Exception("Missing Seller GST Num")
 
-				warehouse = warehouse_data.erp_warehouse
-				location = warehouse_data.location
-				com_address = warehouse_data.erp_address
-				customer_address_in_state=None
-				customer_address_out_state=None
-				if not warehouse:
-					warehouse=amazon.default_company_warehouse
-					location=amazon.default_company_location
-					com_address=amazon.default_company_address
-					# customer_address_in_state=amazon.customer_address_in_state
-					# customer_address_out_state=amazon.customer_address_out_state
-
-				ecommerce_gstin = resolve_ecommerce_gstin_from_mapping(amazon, i.seller_gstin)
+				ecommerce_gstin = resolve_ecommerce_gstin_from_mapping(cred_mapping, seller_gstin)
 				if not ecommerce_gstin:
 					raise Exception(
-						f"Ecommerce GSTIN mapping missing for Seller GSTIN: {i.seller_gstin}. "
-						f"Please add it in Ecommerce Mapping '{amazon.name}' -> Ecommerce GSTIN Mapping."
+						f"Ecommerce GSTIN mapping missing for Seller GSTIN: {seller_gstin}. "
+						f"Please add it in Ecommerce Mapping '{cred_mapping.name}' -> Ecommerce GSTIN Mapping."
 					)
 
-				si = frappe.new_doc("Sales Invoice") if not si_inv else frappe.get_doc("Sales Invoice", si_inv_draft)
-				si.customer = val
+				invoice_dt = resolve_invoice_datetime(first_row)
+				if not invoice_dt:
+					raise Exception("Missing invoice datetime (Printed At / Confirmed At / Invoice Date / Order Date)")
+
+				shipping_state = get_cell(first_row, "shipping_state") or get_cell(first_row, "billing_state")
+				place_of_supply = get_place_of_supply(shipping_state)
+				if not place_of_supply:
+					raise Exception(f"State name Is Wrong Please Check: {shipping_state!r}")
+
+				client_location = get_cell(first_row, "client_location")
+				wh_map = next(
+					(
+						w
+						for w in (cred_mapping.ecommerce_warehouse_mapping or [])
+						if (w.ecom_warehouse_id or "").strip() == client_location
+					),
+					None,
+				)
+				warehouse = (wh_map.erp_warehouse if wh_map and wh_map.erp_warehouse else cred_mapping.default_company_warehouse)
+				location = (wh_map.location if wh_map and wh_map.location else cred_mapping.default_company_location)
+				company_address = (wh_map.erp_address if wh_map and wh_map.erp_address else cred_mapping.default_company_address)
+
+				if not warehouse:
+					raise Exception(f"Warehouse mapping missing for Client Location: {client_location!r}")
+
+				if draft_name:
+					si = frappe.get_doc("Sales Invoice", draft_name)
+				else:
+					si = frappe.new_doc("Sales Invoice")
+
+				si.customer = customer
 				si.set_posting_time = 1
-				# Parse the datetime and add 2 seconds
-				# order_datetime = datetime.strptime(str(i.order_date_time), '%Y-%m-%d %H:%M:%S') if isinstance(i.order_date_time, str) else i.order_date_time
-				# order_datetime_plus_2 = order_datetime + timedelta(seconds=2)
-				si.posting_date = getdate(i.order_date_time)
-				# si.posting_time = get_time(i.order_date_time)
-				si.custom_inv_no = i.order_item_id
-				if i.destination_address_state:
-					state=i.destination_address_state
-					if not state_code_dict.get(str(state.lower())):
-						raise Exception(f"State name Is Wrong Please Check")
-					si.place_of_supply=state_code_dict.get(str(state.lower()))
+				si.posting_date = invoice_dt.date()
+				si.posting_time = invoice_dt.time()
+				si.custom_inv_no = invoice_no
+				si.custom_ecommerce_operator = self.ecommerce_mapping
+				si.custom_ecommerce_type = self.amazon_type
+				si.custom_ecommerce_invoice_id = invoice_no
+
+				# Avoid duplicate primary key errors
+				existing_by_name = frappe.db.exists("Sales Invoice", invoice_no)
+				if not existing_by_name:
+					si.__newname = invoice_no
+
 				si.taxes_and_charges = ""
-				si.custom_ecommerce_operator=self.ecommerce_mapping
-				si.custom_ecommerce_type=self.amazon_type
-				si.taxes = []
 				si.update_stock = 1
 				si.location = location
 				si.set_warehouse = warehouse
-				si.company_address = com_address
+				si.company_address = company_address
 				si.ecommerce_gstin = ecommerce_gstin
-				# si.due_date=getdate(i.order_item_id)
-				si.custom_ecommerce_invoice_id=i.order_item_id
-				si.__newname=i.order_item_id
-				hsn_code=frappe.db.get_value("Item",itemcode,"gst_hsn_code")
-				si.append("items", {
-					"item_code": itemcode,
-					"gst_hsn_code": hsn_code if hsn_code else None,
-					"qty": 1,
-					"rate": flt(i.net_gmv),
-					"description": i.product_name,
-					"warehouse": warehouse,
-					"income_account": amazon.income_account,
-					"item_tax_template": ""
-				})
-				# print("################^&&&&&&&",i.order_item_id,tax_amt)
-				tax_rate=flt(i.gst_rate_on_gmv)*100
-				tax_amt = flt(i.gmv)*(tax_rate/100)
-				if i.source_address_state == i.destination_address_state:
-					if tax_amt > 0:
-						si.customer_address=customer_address_in_state
-						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax CGST - KGOPL","tax_amount": flt(tax_amt) / 2,"rate":tax_rate/2, "description": "CGST"})
-						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax SGST - KGOPL","tax_amount": flt(tax_amt) / 2,"rate":tax_rate/2,"description": "SGST"})
-				else:
-					if tax_amt > 0:
-						si.customer_address=customer_address_out_state
-						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax IGST - KGOPL","tax_amount": flt(tax_amt),"rate":tax_rate,"description": "IGST"})
-			
-				si.save(ignore_permissions=True)
-				for j in si.items:
-					j.item_tax_template = ""
-					j.item_tax_rate = frappe._dict()
+				si.place_of_supply = place_of_supply
 
+				# De-duplicate within this invoice using CRED's Suborder No / Reference Code
+				existing_item_ids = {
+					d.get("custom_ecom_item_id")
+					for d in (si.get("items") or [])
+					if d.get("custom_ecom_item_id")
+				}
+
+				# Accumulate taxes (Actual) so amounts match the CSV exactly.
+				tax_totals = {"cgst": 0.0, "sgst": 0.0, "igst": 0.0}
+				first_tax_rate = 0.0
+
+				customer_state_code = (place_of_supply.split("-")[0] if place_of_supply else "")
+				seller_state_code = (str(seller_gstin)[:2] if str(seller_gstin)[:2].isdigit() else "")
+
+				for row_idx, row in rows:
+					sku_value = resolve_sku_for_mapping(row)
+					if not sku_value:
+						raise Exception("Missing SKU (Accounting Sku / SKU / Marketplace Sku)")
+
+					item_code = get_item_code(sku_value)
+					if not item_code:
+						raise Exception(f"Item mapping not found for SKU: {sku_value}")
+
+					item_id = get_cell(row, "suborder_no") or get_cell(row, "reference_code") or f"{invoice_no}::{sku_value}"
+					if item_id and item_id in existing_item_ids:
+						continue
+
+					qty = flt(get_cell(row, "item_quantity") or get_cell(row, "suborder_quantity") or 1)
+					if qty <= 0:
+						raise Exception(f"Invalid Item Quantity: {qty}")
+
+					taxable_total = flt(get_cell(row, "item_price_excluding_tax"))
+					if taxable_total <= 0:
+						raise Exception("Missing/invalid Item Price Excluding Tax")
+
+					rate = taxable_total / qty if qty else 0
+
+					product_name = get_cell(row, "product_name")
+					hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code")
+
+					si.append(
+						"items",
+						{
+							"item_code": item_code,
+							"qty": qty,
+							"rate": rate,
+							"description": product_name,
+							"warehouse": warehouse,
+							"gst_hsn_code": hsn_code,
+							"income_account": cred_mapping.income_account,
+							"custom_ecom_item_id": item_id,
+						},
+					)
+					if item_id:
+						existing_item_ids.add(item_id)
+
+					row_tax_rate = parse_rate(get_cell(row, "tax_rate"))
+					row_tax_amount = flt(get_cell(row, "tax"))
+					if row_tax_amount <= 0 and row_tax_rate and taxable_total:
+						row_tax_amount = taxable_total * (row_tax_rate / 100)
+
+					if row_tax_rate and not first_tax_rate:
+						first_tax_rate = row_tax_rate
+
+					if row_tax_amount > 0:
+						if seller_state_code and customer_state_code and seller_state_code == customer_state_code:
+							tax_totals["cgst"] += row_tax_amount / 2
+							tax_totals["sgst"] += row_tax_amount / 2
+						else:
+							tax_totals["igst"] += row_tax_amount
+
+				# Reset and apply taxes (Actual) based on totals
+				si.taxes = []
+				if tax_totals["cgst"] > 0:
+					si.append(
+						"taxes",
+						{
+							"charge_type": "Actual",
+							"account_head": "Output Tax CGST - KGOPL",
+							"rate": (first_tax_rate / 2) if first_tax_rate else 0,
+							"tax_amount": tax_totals["cgst"],
+							"description": "CGST",
+						},
+					)
+				if tax_totals["sgst"] > 0:
+					si.append(
+						"taxes",
+						{
+							"charge_type": "Actual",
+							"account_head": "Output Tax SGST - KGOPL",
+							"rate": (first_tax_rate / 2) if first_tax_rate else 0,
+							"tax_amount": tax_totals["sgst"],
+							"description": "SGST",
+						},
+					)
+				if tax_totals["igst"] > 0:
+					si.append(
+						"taxes",
+						{
+							"charge_type": "Actual",
+							"account_head": "Output Tax IGST - KGOPL",
+							"rate": first_tax_rate or 0,
+							"tax_amount": tax_totals["igst"],
+							"description": "IGST",
+						},
+					)
+
+				# Save + submit (deterministic per invoice group)
+				si.save(ignore_permissions=True)
+				for it in si.items:
+					it.item_tax_template = ""
+					it.item_tax_rate = frappe._dict()
 				si.due_date = getdate(today())
-
 				si.save(ignore_permissions=True)
+				si.submit()
 				frappe.db.commit()
-				si_items.append(si.name)
+				success_invoices += 1
 
-				# 🔹 Progress update after each invoice
-				percent = int((cred_count / total_cred_items) * 50)  # Shipments take first 50%
-				self._publish_progress(
-					current=cred_count,
-					total=total_cred_items,
-					progress=percent,
-					message=f"Processed {cred_count}/{total_cred_items} shipment invoices",
-					phase="cred_shipments",
+			except Exception as e:
+				frappe.db.rollback()
+				errors.append(
+					{
+						"idx": first_idx if "first_idx" in locals() else None,
+						"invoice_id": invoice_no,
+						"event": "CRED Import",
+						"message": str(e),
+					}
 				)
 
-			except Exception as e:
-				errors.append({
-					"idx": i.idx,
-					"invoice_id": i.order_item_id,
-					"event": "Create Shipment",
-					"message": str(e)
-				})
+			percent = int((count / total_invoices) * 100)
+			self._publish_progress(
+				current=count,
+				total=total_invoices,
+				progress=percent,
+				message=f"Processed {count}/{total_invoices} invoices",
+				phase="cred_shipments",
+			)
 
-		for si in si_items:
-			try:
-				doc = frappe.get_doc("Sales Invoice", si)
-				doc.submit()
-				frappe.db.commit()
-			except Exception as e:
-				errors.append({
-					"idx": None,
-					"invoice_id": si,
-					"event": "Submit Shipment",
-					"message": e
-				})
+		# Final status + progress
+		self.error_json = json.dumps(errors) if errors else ""
+		if errors and success_invoices:
+			self.status = "Partial Success"
+		elif errors and not success_invoices:
+			self.status = "Error"
+		else:
+			self.status = "Success"
 
-		# Return Invoice
-		total_return_items = len(self.cred_items) or 1
-		return_count = 0
+		self.save(ignore_permissions=True)
 
-		# 🔹 Progress update for returns (starts at 50%)
 		self._publish_progress(
-			current=0,
-			total=total_return_items,
-			progress=50,
-			message=f"Starting Returns (0/{total_return_items})",
-			phase="cred_returns",
-		)
-
-		for i in self.cred_items:
-			return_count += 1
-			try:
-				if i.order_status in ["CANCELLED", "RTO"]:
-					continue
-
-				si_inv = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.cred_order_item_id, "is_return": 1, "docstatus": 1}, "name")
-				if si_inv:
-					continue
-
-
-				original_si_inv = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.cred_order_item_id, "is_return": 0, "docstatus": 1}, "name")
-				# if not original_si_inv:
-				# 	errors.append({
-				# 		"idx": i.idx,
-				# 		"invoice_id": i.cred_order_item_id,
-				# 		"event": "Original Invoice Not Found",
-				# 		"message": "Original Invoice Not  Found"
-				# 	})
-				# 	continue
-				si_inv_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": i.cred_order_item_id, "is_return": 1, "docstatus": 0}, "name")
-
-				itemcode = next((jk.erp_item for jk in amazon.ecom_item_table if jk.ecom_item_id == i.get(str(amazon.ecom_sku_column_header))), None)
-				warehouse_data = next((kk for kk in amazon.ecommerce_warehouse_mapping if kk.ecom_warehouse_id == i.warehouse_location_code), None)
-				if not itemcode or not warehouse_data:
-					errors.append({
-						"idx": i.idx,
-						"invoice_id": i.cred_order_item_id,
-						"event": "Create Return",
-						"message": "Missing item code or warehouse mapping"
-					})
-					continue
-				warehouse = warehouse_data.erp_warehouse
-				location = warehouse_data.location
-				com_address = warehouse_data.erp_address
-				# customer_address_in_state=warehouse_data.customer_address_in_state
-				# customer_address_out_state=warehouse_data.customer_address_out_state
-				if not warehouse:
-					warehouse=amazon.default_company_warehouse
-					location=amazon.default_company_location
-					
-					com_address=amazon.default_company_address
-					# customer_address_in_state=amazon.customer_address_in_state
-					# customer_address_out_state=amazon.customer_address_out_state
-				# company_gstin = frappe.db.get_value("Address", com_address, "gstin")
-				ecommerce_gstin = resolve_ecommerce_gstin_from_mapping(amazon, i.seller_gstin)
-				if not ecommerce_gstin:
-					raise Exception(
-						f"Ecommerce GSTIN mapping missing for Seller GSTIN: {i.seller_gstin}. "
-						f"Please add it in Ecommerce Mapping '{amazon.name}' -> Ecommerce GSTIN Mapping."
-					)
-
-				si = frappe.new_doc("Sales Invoice") if not si_inv else frappe.get_doc("Sales Invoice", si_inv_draft)
-				si.customer = val
-				si.set_posting_time = 1
-				if i.customer_state:
-					state=i.customer_state
-					if not state_code_dict.get(str(state.lower())):
-						raise Exception(f"State name Is Wrong Please Check")
-					si.place_of_supply=state_code_dict.get(str(state.lower()))
-				# Parse the datetime and add 1 minute for returns
-				# refund_datetime = datetime.strptime(str(i.refund_date_time), '%Y-%m-%d %H:%M:%S') if isinstance(i.refund_date_time, str) else i.refund_date_time
-				# refund_datetime_plus_1min = refund_datetime + timedelta(minutes=1)
-				si.posting_date = getdate(i.refund_date_time)
-				# si.posting_time = refund_datetime_plus_1min.time()
-				si.custom_ecommerce_operator=self.ecommerce_mapping
-				si.custom_ecommerce_type=self.amazon_type
-				si.custom_inv_no = i.cred_order_item_id
-				si.taxes_and_charges = ""
-				si.taxes = []
-				si.update_stock = 1
-				si.location = location
-				si.set_warehouse = warehouse
-				si.company_address = com_address
-				si.ecommerce_gstin = ecommerce_gstin
-				si.is_return=1
-				si.custom_ecommerce_invoice_id="CR"+str(i.cred_order_item_id)
-				si.__newname="CR"+str(i.cred_order_item_id)
-				tax_amt = flt(i.gmv) *flt(i.gst_rate)
-				hsn_code=frappe.db.get_value("Item",itemcode,"gst_hsn_code")
-				si.append("items", {
-					"item_code": itemcode,
-					"gst_hsn_code": hsn_code if hsn_code else None,
-					"qty": -1,
-					"rate": abs(flt(i.gmv) - tax_amt),
-					"description": i.product_name,
-					"warehouse": warehouse,
-					"income_account": amazon.income_account
-				})
-
-				tax_rate=flt(i.gst_rate)*100
-				tax_amt = flt(i.gmv)*(tax_rate/100)
-				if i.warehouse_state == i.customer_state:
-					if tax_amt > 0:
-						si.customer_address=customer_address_in_state
-						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax CGST - KGOPL","tax_amount": flt(tax_amt) / 2,"rate":tax_rate/2, "description": "CGST"})
-						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax SGST - KGOPL","tax_amount": flt(tax_amt) / 2,"rate":tax_rate/2,"description": "SGST"})
-				else:
-					if tax_amt > 0:
-						si.customer_address=customer_address_out_state
-						si.append("taxes", {"charge_type": "On Net Total", "account_head": "Output Tax IGST - KGOPL","tax_amount": flt(tax_amt),"rate":tax_rate,"description": "IGST"})
-			
-				
-				si.save(ignore_permissions=True)
-				for j in si.items:
-					j.item_tax_template = ""
-					j.item_tax_rate = frappe._dict()
-				si.due_date=getdate(today())
-				si.save(ignore_permissions=True)
-				frappe.db.commit()
-				si_return_items.append(si.name)
-
-				# 🔹 Progress update after each return invoice
-				percent = 50 + int((return_count / total_return_items) * 50)  # Returns take last 50%
-				self._publish_progress(
-					current=return_count,
-					total=total_return_items,
-					progress=percent,
-					message=f"Processed {return_count}/{total_return_items} return invoices",
-					phase="cred_returns",
-				)
-
-			except Exception as e:
-				errors.append({
-					"idx": i.idx,
-					"invoice_id": i.cred_order_item_id,
-					"event": "Create Return",
-					"message": str(e)
-				})
-
-		for si in si_return_items:
-			try:
-				doc = frappe.get_doc("Sales Invoice", si)
-				doc.submit()
-				frappe.db.commit()
-			except Exception as e:
-				errors.append({
-					"idx": None,
-					"invoice_id": si,
-					"event": "Submit Return",
-					"message": e
-				})
-
-		# 🔹 Final progress update
-		self._publish_progress(
+			current=total_invoices,
+			total=total_invoices,
 			progress=100,
 			message="CRED Import Completed ✅",
 			phase="cred",
 		)
 
-		# Save all errors in test_json
-		if errors:
-			self.error_json = frappe.as_json(errors)
-			if len(errors) == 0:
-				self.status = "Success"
-			elif len(self.flipkart_items) != len(errors):
-				self.status = "Partial Success"
-			else:
-				self.status = "Error"
-
-			self.save(ignore_permissions=True)
+		return {"status": self.status, "errors": errors, "success_invoices": success_invoices}
 
 
 	def create_jio_mart(self):
