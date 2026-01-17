@@ -241,10 +241,33 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 });
 
 
+// Realtime progress (Data Import-like dashboard progress bar)
 frappe.realtime.on("data_import_progress", (data) => {
-    frappe.show_progress("Invoice Creation", data.progress, 100, data.message);
+	const frm = cur_frm;
+	if (!frm || frm.doctype !== "Ecommerce Bill Import") return;
 
-    if (data.progress === 100) {
-        frappe.hide_progress();
+	// Ignore progress meant for Frappe's "Data Import" doctype
+	if (data?.data_import) return;
+
+	// If backend sends docname/doctype, respect it (prevents cross-doctype noise)
+	if (data?.doctype && data.doctype !== frm.doctype) return;
+	if (data?.docname && frm.doc?.name && data.docname !== frm.doc.name) return;
+
+	let percent = data?.progress;
+	if (percent === undefined && data?.current && data?.total) {
+		percent = Math.floor((data.current * 100) / data.total);
+	}
+	percent = Math.max(0, Math.min(100, percent || 0));
+
+	const message = data?.message || __("Processing…");
+	frm.dashboard.show_progress(__("Import Progress"), percent, message);
+	frm.page.set_indicator(__("In Progress"), "orange");
+
+	// Hide progress when complete
+	if (percent >= 100) {
+		setTimeout(() => {
+			frm.dashboard.hide();
+			frm.reload_doc();
+		}, 1500);
     }
 });
