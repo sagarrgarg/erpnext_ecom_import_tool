@@ -78,6 +78,99 @@ def clean_csv_cell(val):
 	return s
 
 
+def parse_export_datetime(value):
+	"""Parse export date/datetime with a day-first preference (DD-MM-YYYY).
+
+	Why this exists:
+	- Some platform exports provide dates like "01-12-2025" which are day-first.
+	- `getdate()` can interpret ambiguous strings as month-first depending on settings.
+	- For e-commerce imports we want deterministic India-style parsing.
+	"""
+	if not value:
+		return None
+
+	if isinstance(value, datetime):
+		return value
+
+	# Pandas Timestamp / Excel-derived value support
+	if hasattr(value, "to_pydatetime"):
+		try:
+			return value.to_pydatetime()
+		except Exception:
+			pass
+
+	s = clean_csv_cell(value)
+	if not s:
+		return None
+
+	s = s.replace("\u00a0", " ").strip()
+
+	# Try common day-first formats first
+	for fmt in (
+		"%d-%m-%Y %H:%M:%S",
+		"%d-%m-%Y %H:%M",
+		"%d/%m/%Y %H:%M:%S",
+		"%d/%m/%Y %H:%M",
+		"%d-%m-%Y",
+		"%d/%m/%Y",
+		"%d-%m-%y %H:%M:%S",
+		"%d-%m-%y %H:%M",
+		"%d/%m/%y %H:%M:%S",
+		"%d/%m/%y %H:%M",
+		"%d-%m-%y",
+		"%d/%m/%y",
+		"%Y-%m-%d %H:%M:%S",
+		"%Y-%m-%d %H:%M",
+		"%Y/%m/%d %H:%M:%S",
+		"%Y/%m/%d %H:%M",
+		"%Y-%m-%d",
+		"%Y/%m/%d",
+	):
+		try:
+			return datetime.strptime(s, fmt)
+		except Exception:
+			pass
+
+	# Common case: extra suffixes; try trimming to 19 chars (YYYY-MM-DD HH:MM:SS / DD-MM-YYYY HH:MM:SS)
+	s19 = s[:19]
+	for fmt in ("%d-%m-%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M:%S"):
+		try:
+			return datetime.strptime(s19, fmt)
+		except Exception:
+			pass
+
+	# Last resort: dateutil parser with dayfirst=True
+	try:
+		from dateutil import parser as date_parser
+
+		return date_parser.parse(s, dayfirst=True)
+	except Exception:
+		return None
+
+
+def parse_export_date(value):
+	"""Return a date from an export value (date or datetime string)."""
+	dt = parse_export_datetime(value)
+	return dt.date() if dt else None
+
+
+def parse_export_time(value):
+	"""Return a time from an export value (date or datetime string)."""
+	dt = parse_export_datetime(value)
+	return dt.time() if dt else None
+
+
+def normalize_tax_rate(rate):
+	"""Normalize tax rate to the percentage ERPNext expects (e.g. 5 for 5%).
+
+	Some sources provide 0.05 (fraction) and some provide 5 (percent).
+	"""
+	rate = flt(rate)
+	if 0 < rate < 1:
+		return rate * 100
+	return rate
+
+
 def resolve_ecommerce_gstin_from_mapping(ecommerce_mapping, seller_gstin):
 	"""Resolve `Sales Invoice.ecommerce_gstin` from `Ecommerce Mapping.ecommerce_gstin_mapping`.
 
@@ -401,7 +494,7 @@ class EcommerceBillImport(Document):
 			# Sort by invoice date for stable grouping/processing downstream
 			if self.mtr_b2b:
 					self.mtr_b2b.sort(
-						key=lambda x: getdate(x.invoice_date) if x.invoice_date else frappe.utils.getdate("1900-01-01")
+						key=lambda x: parse_export_date(x.invoice_date) or frappe.utils.getdate("1900-01-01")
 				)
 
 	def append_mtr_b2c(self):
@@ -442,7 +535,7 @@ class EcommerceBillImport(Document):
 			if self.mtr_b2c:
 				# Use getdate to handle ERPNext date parsing
 				self.mtr_b2c.sort(
-					key=lambda x: getdate(x.invoice_date) if x.invoice_date else frappe.utils.getdate("1900-01-01")
+					key=lambda x: parse_export_date(x.invoice_date) or frappe.utils.getdate("1900-01-01")
             )
 
 	
@@ -486,7 +579,7 @@ class EcommerceBillImport(Document):
 			if self.stock_transfer:
 				# Use getdate to handle ERPNext date parsing
 				self.stock_transfer.sort(
-					key=lambda x: getdate(x.invoice_date) if x.invoice_date else frappe.utils.getdate("1900-01-01")
+					key=lambda x: parse_export_date(x.invoice_date) or frappe.utils.getdate("1900-01-01")
             )
 				
 	
@@ -503,6 +596,7 @@ class EcommerceBillImport(Document):
 			return
 
 		import os
+		import pandas as pd
 		from frappe.utils.file_manager import get_file_path
 
 		file_url = self.cred_attach
@@ -513,12 +607,8 @@ class EcommerceBillImport(Document):
 			frappe.throw(f"File not found at path: {file_path}")
 
 		ext = os.path.splitext(filename)[1].lower()
-		if ext != ".csv":
-			frappe.throw("Please upload the CRED export in CSV format (.csv).")
-
-		ext = os.path.splitext(filename)[1].lower()
 		if ext == ".csv":
-			# Validate CSV is readable and count rows (optional)
+			# CSV: validate only (invoice creation reads CSV directly in background job)
 			try:
 				df = pd.read_csv(
 					file_path,
@@ -533,10 +623,9 @@ class EcommerceBillImport(Document):
 			return
 
 		# ---------------- Legacy Excel (kept for backward compatibility) ----------------
-		import os
 
-		# Helper function to clean and convert Excel values
 		def clean(val):
+			"""Normalize Excel cell values to string/date."""
 			if pd.isna(val):
 				return ""
 
@@ -547,7 +636,6 @@ class EcommerceBillImport(Document):
 				except Exception:
 					pass
 
-			# If it's already a datetime object
 			if isinstance(val, datetime):
 				return val.strftime("%Y-%m-%d")
 
@@ -556,27 +644,28 @@ class EcommerceBillImport(Document):
 			except Exception:
 				return str(val)
 
-		# Read Excel file using appropriate sheet rows
-		df = pd.read_excel(file_path, sheet_name=1)
-		df2 = pd.read_excel(file_path, sheet_name=0)
+		df_returns = pd.read_excel(file_path, sheet_name=1)
+		df_sales = pd.read_excel(file_path, sheet_name=0)
 
-		# Map sheet-1 -> cred_items (returns), sheet-0 -> cred (sales)
 		return_child_doctype = frappe.get_meta(self.doctype).get_field("cred_items").options
-		return_meta = frappe.get_meta(return_child_doctype)
-		return_fields = {f.fieldname for f in return_meta.fields}
+		sale_child_doctype = frappe.get_meta(self.doctype).get_field("cred").options
 
-		for _, row in df.iterrows():
+		return_fields = {f.fieldname for f in frappe.get_meta(return_child_doctype).fields}
+		sale_fields = {f.fieldname for f in frappe.get_meta(sale_child_doctype).fields}
+
+		for _, row in df_returns.iterrows():
 			child_row = self.append("cred_items", {})
-			for column_name in df.columns:
+			for column_name in df_returns.columns:
 				fieldname = column_name.strip().lower().replace(" ", "_")
 				if fieldname in return_fields:
 					child_row.set(fieldname, clean(row[column_name]))
 
-		for _, row in df2.iterrows():
+		for _, row in df_sales.iterrows():
 			child_row = self.append("cred", {})
-			for column_name in df2.columns:
+			for column_name in df_sales.columns:
 				fieldname = column_name.strip().lower().replace(" ", "_")
-				child_row.set(fieldname, clean(row[column_name]))
+				if fieldname in sale_fields:
+					child_row.set(fieldname, clean(row[column_name]))
 
 	def append_flipkart(self):
 		import pandas as pd
@@ -711,7 +800,7 @@ class EcommerceBillImport(Document):
 			if self.jio_mart_items:
 				# Use getdate to handle ERPNext date parsing
 				self.jio_mart_items.sort(
-					key=lambda x: getdate(x.buyer_invoice_date) if x.buyer_invoice_date else frappe.utils.getdate("1900-01-01")
+					key=lambda x: parse_export_date(x.buyer_invoice_date) or frappe.utils.getdate("1900-01-01")
             )
 
 	@frappe.whitelist()
@@ -823,8 +912,11 @@ class EcommerceBillImport(Document):
 							# Parse the datetime and add 2 seconds
 							# invoice_datetime = datetime.strptime(str(items_data[0][1].get("invoice_date")), '%Y-%m-%d %H:%M:%S') if isinstance(items_data[0][1].get("invoice_date"), str) else items_data[0][1].get("invoice_date")
 							# invoice_datetime_plus_2 = invoice_datetime + timedelta(seconds=2)
-							si.posting_date = getdate(items_data[0][1].get("invoice_date"))
-							si.posting_time = get_time(items_data[0][1].get("invoice_date"))
+							invoice_dt = parse_export_datetime(items_data[0][1].get("invoice_date"))
+							if not invoice_dt:
+								raise Exception(f"Invalid Invoice Date: {items_data[0][1].get('invoice_date')}")
+							si.posting_date = invoice_dt.date()
+							si.posting_time = invoice_dt.time()
 							si.custom_inv_no = invoice_no
 							si.custom_ecommerce_invoice_id=invoice_no
 							# Avoid duplicate primary key errors if an invoice with this name already exists
@@ -912,15 +1004,17 @@ class EcommerceBillImport(Document):
 									("SGST",flt(child_row.sgst_rate)+flt(child_row.utgst_rate), flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
 									("IGST", flt(child_row.igst_rate),flt(child_row.igst_tax) ,"Output Tax IGST - KGOPL")
 									]:
-										if amount>0:
+										if amount:
+											rate = normalize_tax_rate(rate)
 											existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
 											if existing_tax:
 												existing_tax.tax_amount += amount
+												existing_tax.rate = rate
 											else:
 												si.append("taxes", {
 													"charge_type": "On Net Total",
 													"account_head": acc_head,
-													"rate":rate,
+													"rate": rate,
 													"tax_amount": amount,
 													"description": tax_type
 												})
@@ -1026,8 +1120,13 @@ class EcommerceBillImport(Document):
 							si_return.customer = customer
 							si_return.set_posting_time = 1
 							# Parse the datetime and add 1 minute for returns
-							si_return.posting_date = getdate(refund_items[0][1].get("credit_note_date"))
-							si_return.posting_time = get_time(refund_items[0][1].get("credit_note_date"))
+							credit_note_dt = parse_export_datetime(refund_items[0][1].get("credit_note_date"))
+							if not credit_note_dt:
+								raise Exception(
+									f"Invalid Credit Note Date: {refund_items[0][1].get('credit_note_date')}"
+								)
+							si_return.posting_date = credit_note_dt.date()
+							si_return.posting_time = credit_note_dt.time()
 							si_return.custom_ecommerce_invoice_id = credit_note_no
 							# Avoid duplicate primary key errors if an invoice with this name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", credit_note_no)
@@ -1112,15 +1211,17 @@ class EcommerceBillImport(Document):
 									("SGST",flt(child_row.sgst_rate)+flt(child_row.utgst_rate), flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
 									("IGST", flt(child_row.igst_rate),flt(child_row.igst_tax) ,"Output Tax IGST - KGOPL")
 									]:
-										if amount>0:
+										if amount:
+											rate = normalize_tax_rate(rate)
 											existing_tax = next((t for t in si_return.taxes if t.account_head == acc_head), None)
 											if existing_tax:
 												existing_tax.tax_amount += amount
+												existing_tax.rate = rate
 											else:
 												si_return.append("taxes", {
 													"charge_type": "On Net Total",
 													"account_head": acc_head,
-													"rate":rate,
+													"rate": rate,
 													"tax_amount": amount,
 													"description": tax_type
 												})
@@ -1266,8 +1367,11 @@ class EcommerceBillImport(Document):
 						# Parse the datetime and add 2 seconds
 						# invoice_datetime = datetime.strptime(str(items_data[0][1].get("invoice_date")), '%Y-%m-%d %H:%M:%S') if isinstance(items_data[0][1].get("invoice_date"), str) else items_data[0][1].get("invoice_date")
 						# invoice_datetime_plus_2 = invoice_datetime + timedelta(seconds=2)
-						si.posting_date = getdate(items_data[0][1].get("invoice_date"))
-						si.posting_time = get_time(items_data[0][1].get("invoice_date"))
+						invoice_dt = parse_export_datetime(items_data[0][1].get("invoice_date"))
+						if not invoice_dt:
+							raise Exception(f"Invalid Invoice Date: {items_data[0][1].get('invoice_date')}")
+						si.posting_date = invoice_dt.date()
+						si.posting_time = invoice_dt.time()
 						si.custom_inv_no = invoice_no
 						si.custom_ecommerce_invoice_id = invoice_no
 						# Avoid duplicate primary key errors if an invoice with this name already exists
@@ -1361,15 +1465,17 @@ class EcommerceBillImport(Document):
 								("SGST", flt(child_row.sgst_rate) + flt(child_row.utgst_rate), flt(child_row.sgst_tax) + flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
 								("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), "Output Tax IGST - KGOPL")
 							]:
-								if amount > 0:
+								if amount:
+									rate = normalize_tax_rate(rate)
 									existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
 									if existing_tax:
 										existing_tax.tax_amount += amount
+										existing_tax.rate = rate
 									else:
 										si.append("taxes", {
 											"charge_type": "On Net Total",
 											"account_head": acc_head,
-											"rate": rate * 100,
+											"rate": rate,
 											"tax_amount": amount,
 											"description": tax_type
 										})
@@ -1485,8 +1591,13 @@ class EcommerceBillImport(Document):
 						si_return.set_posting_time = 1
 
 						# Parse the datetime and add 1 minute for returns
-						si_return.posting_date = getdate(refund_items[0][1].get("credit_note_date"))
-						si_return.posting_time = get_time(refund_items[0][1].get("credit_note_date"))
+						credit_note_dt = parse_export_datetime(refund_items[0][1].get("credit_note_date"))
+						if not credit_note_dt:
+							raise Exception(
+								f"Invalid Credit Note Date: {refund_items[0][1].get('credit_note_date')}"
+							)
+						si_return.posting_date = credit_note_dt.date()
+						si_return.posting_time = credit_note_dt.time()
 						si_return.custom_ecommerce_operator = self.ecommerce_mapping
 						si_return.custom_ecommerce_type = self.amazon_type
 						si_return.custom_inv_no = invoice_no
@@ -1574,15 +1685,17 @@ class EcommerceBillImport(Document):
 								("SGST", flt(child_row.sgst_rate) + flt(child_row.utgst_rate), flt(child_row.sgst_tax) + flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
 								("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), "Output Tax IGST - KGOPL")
 							]:
-								if amount > 0:
+								if amount:
+									rate = normalize_tax_rate(rate)
 									existing_tax = next((t for t in si_return.taxes if t.account_head == acc_head), None)
 									if existing_tax:
 										existing_tax.tax_amount += amount
+										existing_tax.rate = rate
 									else:
 										si_return.append("taxes", {
 											"charge_type": "On Net Total",
 											"account_head": acc_head,
-											"rate": rate * 100,
+											"rate": rate,
 											"tax_amount": amount,
 											"description": tax_type
 										})
@@ -1727,8 +1840,11 @@ class EcommerceBillImport(Document):
 					# Parse the datetime and add 2 seconds
 					# invoice_datetime = datetime.strptime(str(group_rows[0][1].get("invoice_date")), '%Y-%m-%d %H:%M:%S') if isinstance(group_rows[0][1].get("invoice_date"), str) else group_rows[0][1].get("invoice_date")
 					# invoice_datetime_plus_2 = invoice_datetime + timedelta(seconds=2)
-					doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
-					doc.posting_time = get_time(group_rows[0][1].get("invoice_date"))
+					invoice_dt = parse_export_datetime(group_rows[0][1].get("invoice_date"))
+					if not invoice_dt:
+						raise Exception(f"Invalid Invoice Date: {group_rows[0][1].get('invoice_date')}")
+					doc.posting_date = invoice_dt.date()
+					doc.posting_time = invoice_dt.time()
 					doc.custom_inv_no = invoice_no
 					doc.custom_ecommerce_operator = self.ecommerce_mapping
 					doc.custom_ecommerce_type = self.amazon_type
@@ -1776,15 +1892,17 @@ class EcommerceBillImport(Document):
 								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), flt(row.sgst_amount) + flt(row.utgst_amount), "Output Tax SGST - KGOPL"),
 								("IGST", flt(row.igst_rate), flt(row.igst_amount), "Output Tax IGST - KGOPL")
 							]:
-								if amount > 0:
+								if amount:
+									rate = normalize_tax_rate(rate)
 									existing_tax = next((t for t in doc.taxes if t.account_head == acc_head), None)
 									if existing_tax:
 										existing_tax.tax_amount += amount
+										existing_tax.rate = rate
 									else:
 										doc.append("taxes", {
 											"charge_type": "On Net Total",
 											"account_head": acc_head,
-											"rate": rate * 100,
+											"rate": rate,
 											"tax_amount": amount,
 											"description": tax_type
 										})
@@ -1808,8 +1926,11 @@ class EcommerceBillImport(Document):
 					# Parse the datetime and add 2 seconds
 					# invoice_datetime = datetime.strptime(str(group_rows[0][1].get("invoice_date")), '%Y-%m-%d %H:%M:%S') if isinstance(group_rows[0][1].get("invoice_date"), str) else group_rows[0][1].get("invoice_date")
 					# invoice_datetime_plus_2 = invoice_datetime + timedelta(seconds=2)
-					pi_doc.posting_date = getdate(group_rows[0][1].get("invoice_date"))
-					pi_doc.posting_time = get_time(group_rows[0][1].get("invoice_date"))
+					invoice_dt = parse_export_datetime(group_rows[0][1].get("invoice_date"))
+					if not invoice_dt:
+						raise Exception(f"Invalid Invoice Date: {group_rows[0][1].get('invoice_date')}")
+					pi_doc.posting_date = invoice_dt.date()
+					pi_doc.posting_time = invoice_dt.time()
 					pi_doc.custom_inv_no = invoice_no
 					pi_doc.customer = customer
 					pi_doc.custom_ecommerce_operator = self.ecommerce_mapping
@@ -1863,15 +1984,17 @@ class EcommerceBillImport(Document):
 								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), flt(row.sgst_amount) + flt(row.utgst_amount), "Input Tax SGST - KGOPL"),
 								("IGST", flt(row.igst_rate), flt(row.igst_amount), "Input Tax IGST - KGOPL")
 							]:
-								if amount > 0:
+								if amount:
+									rate = normalize_tax_rate(rate)
 									existing_tax = next((t for t in pi_doc.taxes if t.account_head == acc_head), None)
 									if existing_tax:
 										existing_tax.tax_amount += amount
+										existing_tax.rate = rate
 									else:
 										pi_doc.append("taxes", {
 											"charge_type": "On Net Total",
 											"account_head": acc_head,
-											"rate": rate * 100,
+											"rate": rate,
 											"tax_amount": amount,
 											"description": tax_type
 										})
@@ -2034,7 +2157,7 @@ class EcommerceBillImport(Document):
 					si = frappe.new_doc("Sales Invoice")
 					si.customer = customer
 					si.set_posting_time = 1
-					si.posting_date = getdate(first.buyer_invoice_date)
+					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
 					si.custom_inv_no = invoice_key
 					si.custom_ecommerce_operator = self.ecommerce_mapping
 					si.custom_ecommerce_type = self.amazon_type
@@ -2271,7 +2394,7 @@ class EcommerceBillImport(Document):
 					si = frappe.new_doc("Sales Invoice")
 					si.customer = customer
 					si.set_posting_time = 1
-					si.posting_date = getdate(first.buyer_invoice_date)
+					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
 					si.custom_inv_no = invoice_key
 					si.custom_ecommerce_operator = self.ecommerce_mapping
 					si.custom_ecommerce_type = self.amazon_type
@@ -2599,11 +2722,11 @@ class EcommerceBillImport(Document):
 		invoice_groups = {}
 		for row_idx, row in df.iterrows():
 			if is_cancelled_row(row):
-				continue
+					continue
 
 			invoice_no = get_invoice_no(row)
 			if not invoice_no:
-				continue
+					continue
 
 			invoice_groups.setdefault(invoice_no, []).append((row_idx + 1, row))
 
@@ -2778,7 +2901,7 @@ class EcommerceBillImport(Document):
 							"qty": qty,
 							"rate": rate,
 							"description": product_name,
-							"warehouse": warehouse,
+					"warehouse": warehouse,
 							"gst_hsn_code": hsn_code,
 							"income_account": cred_mapping.income_account,
 							"custom_ecom_item_id": item_id,
@@ -2799,7 +2922,7 @@ class EcommerceBillImport(Document):
 						if seller_state_code and customer_state_code and seller_state_code == customer_state_code:
 							tax_totals["cgst"] += row_tax_amount / 2
 							tax_totals["sgst"] += row_tax_amount / 2
-						else:
+				else:
 							tax_totals["igst"] += row_tax_amount
 
 				# Reset and apply taxes (Actual) based on totals
@@ -2837,7 +2960,7 @@ class EcommerceBillImport(Document):
 							"description": "IGST",
 						},
 					)
-
+			
 				# Save + submit (deterministic per invoice group)
 				si.save(ignore_permissions=True)
 				for it in si.items:
@@ -2872,13 +2995,13 @@ class EcommerceBillImport(Document):
 		# Final status + progress
 		self.error_json = json.dumps(errors) if errors else ""
 		if errors and success_invoices:
-			self.status = "Partial Success"
+				self.status = "Partial Success"
 		elif errors and not success_invoices:
-			self.status = "Error"
+				self.status = "Error"
 		else:
 			self.status = "Success"
 
-		self.save(ignore_permissions=True)
+			self.save(ignore_permissions=True)
 
 		self._publish_progress(
 			current=total_invoices,
@@ -3015,7 +3138,7 @@ class EcommerceBillImport(Document):
 					si = frappe.new_doc("Sales Invoice")
 					si.customer = customer
 					si.set_posting_time = 1
-					si.posting_date = getdate(first.buyer_invoice_date)
+					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
 					si.custom_inv_no = invoice_key
 					si.custom_ecommerce_operator = self.ecommerce_mapping
 					si.custom_ecommerce_type = self.amazon_type
@@ -3242,7 +3365,7 @@ class EcommerceBillImport(Document):
 					si = frappe.new_doc("Sales Invoice")
 					si.customer = customer
 					si.set_posting_time = 1
-					si.posting_date = getdate(first.buyer_invoice_date)
+					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
 					si.custom_inv_no = invoice_key
 					si.custom_ecommerce_operator = self.ecommerce_mapping
 					si.custom_ecommerce_type = self.amazon_type
