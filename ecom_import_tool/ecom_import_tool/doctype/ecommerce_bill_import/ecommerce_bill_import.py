@@ -57,6 +57,7 @@ def clean_csv_cell(val):
 	Strategy:
 	- Read CSV with dtype=str and disable NA parsing.
 	- Then trim/strip quotes and normalize common "null-ish" strings.
+	- Strip leading backtick/apostrophe used by some exports (e.g. CRED) to force Excel text mode.
 	"""
 	if val is None:
 		return ""
@@ -68,8 +69,13 @@ def clean_csv_cell(val):
 	if s.lower() in {"nan", "none", "null"}:
 		return ""
 
+	# Strip surrounding quotes (double or single)
 	while (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
 		s = s[1:-1].strip()
+
+	# Strip leading backtick or apostrophe used by CRED/Excel to force text mode (e.g. `12345 or '12345)
+	while s and s[0] in ("`", "'"):
+		s = s[1:].strip()
 
 	# Convert integer-like floats (e.g. "123.0") to "123"
 	if s.endswith(".0") and s[:-2].lstrip("-").isdigit():
@@ -584,12 +590,12 @@ class EcommerceBillImport(Document):
 				
 	
 	def cred_append(self):
-		"""Parse the attached CRED file.
+		"""Parse the attached CRED file and populate child tables for preview.
 
-		CRED has evolved over time (older Excel exports vs newer CSV exports). For CSV,
-		we intentionally DO NOT populate the hidden child tables to avoid heavy document
-		payloads; invoice creation reads the CSV directly in the background job.
+		CRED has evolved over time (older Excel exports vs newer CSV exports).
+		This function handles both formats and populates the `cred` child table for preview.
 		"""
+		import re
 		self.cred_items = []
 		self.cred = []
 		if not self.cred_attach:
@@ -606,9 +612,19 @@ class EcommerceBillImport(Document):
 		if not os.path.exists(file_path):
 			frappe.throw(f"File not found at path: {file_path}")
 
+		def clean(val):
+			"""Normalize cell values to string."""
+			return clean_csv_cell(val)
+
+		def normalize_col(col_name: str) -> str:
+			"""Normalize column name to snake_case for lookup."""
+			col_name = (str(col_name) or "").strip().lower()
+			col_name = re.sub(r"[^a-z0-9]+", "_", col_name).strip("_")
+			return col_name
+
 		ext = os.path.splitext(filename)[1].lower()
 		if ext == ".csv":
-			# CSV: validate only (invoice creation reads CSV directly in background job)
+			# Read CSV as strings (prevents scientific notation / precision loss)
 			try:
 				df = pd.read_csv(
 					file_path,
@@ -620,11 +636,80 @@ class EcommerceBillImport(Document):
 				frappe.throw(f"Error reading CRED CSV: {str(e)}")
 
 			self.payload_count = len(df)
+
+			# Build column lookup map
+			col_map = {normalize_col(c): c for c in df.columns}
+
+			def get_cell(row, key: str) -> str:
+				col = col_map.get(key)
+				if not col:
+					return ""
+				return clean(row.get(col))
+
+			# Get child table fields for validation
+			sale_child_doctype = frappe.get_meta(self.doctype).get_field("cred").options
+			sale_fields = {f.fieldname for f in frappe.get_meta(sale_child_doctype).fields}
+
+			# Get ecommerce mapping for SKU column header
+			ecom_sku_col = None
+			if self.ecommerce_mapping:
+				try:
+					cred_mapping = frappe.get_doc("Ecommerce Mapping", self.ecommerce_mapping)
+					configured = (cred_mapping.ecom_sku_column_header or "").strip()
+					if configured:
+						ecom_sku_col = normalize_col(configured)
+				except Exception:
+					pass
+
+			def resolve_sku(row):
+				"""Resolve SKU using mapping's ecom_sku_column_header with fallback to marketplace_sku."""
+				if ecom_sku_col:
+					value = get_cell(row, ecom_sku_col)
+					if value:
+						return value
+				# Fallback to marketplace_sku
+				return get_cell(row, "marketplace_sku")
+
+			# Map new CSV columns to existing child table fields for preview
+			# New CSV format → Cred Items child table
+			for _, row in df.iterrows():
+				child_row = self.append("cred", {})
+
+				# Map columns (new CSV column → existing field)
+				if "seller_gstin" in sale_fields:
+					child_row.seller_gstin = get_cell(row, "seller_gst_num")
+				if "order_date_time" in sale_fields:
+					child_row.order_date_time = get_cell(row, "order_date") or get_cell(row, "printed_at")
+				if "order_item_id" in sale_fields:
+					child_row.order_item_id = get_cell(row, "ee_invoice_no") or get_cell(row, "suborder_no") or get_cell(row, "reference_code")
+				if "order_status" in sale_fields:
+					child_row.order_status = get_cell(row, "order_status")
+				if "sku_id" in sale_fields:
+					child_row.sku_id = resolve_sku(row)
+				if "product_name" in sale_fields:
+					child_row.product_name = get_cell(row, "product_name")
+				if "brand" in sale_fields:
+					child_row.brand = get_cell(row, "brand")
+				if "tax_rate" in sale_fields:
+					child_row.tax_rate = get_cell(row, "tax_rate")
+				if "taxable_amount" in sale_fields:
+					child_row.taxable_amount = get_cell(row, "item_price_excluding_tax")
+				if "tax_amount" in sale_fields:
+					child_row.tax_amount = get_cell(row, "tax")
+				if "gmv" in sale_fields:
+					child_row.gmv = get_cell(row, "order_invoice_amount")
+				if "warehouse_location_code" in sale_fields:
+					child_row.warehouse_location_code = get_cell(row, "client_location")
+				if "destination_address_state" in sale_fields:
+					child_row.destination_address_state = get_cell(row, "shipping_state")
+				if "destination_pincode" in sale_fields:
+					child_row.destination_pincode = get_cell(row, "shipping_zip_code")
+
 			return
 
 		# ---------------- Legacy Excel (kept for backward compatibility) ----------------
 
-		def clean(val):
+		def excel_clean(val):
 			"""Normalize Excel cell values to string/date."""
 			if pd.isna(val):
 				return ""
@@ -658,14 +743,14 @@ class EcommerceBillImport(Document):
 			for column_name in df_returns.columns:
 				fieldname = column_name.strip().lower().replace(" ", "_")
 				if fieldname in return_fields:
-					child_row.set(fieldname, clean(row[column_name]))
+					child_row.set(fieldname, excel_clean(row[column_name]))
 
 		for _, row in df_sales.iterrows():
 			child_row = self.append("cred", {})
 			for column_name in df_sales.columns:
 				fieldname = column_name.strip().lower().replace(" ", "_")
 				if fieldname in sale_fields:
-					child_row.set(fieldname, clean(row[column_name]))
+					child_row.set(fieldname, excel_clean(row[column_name]))
 
 	def append_flipkart(self):
 		import pandas as pd
@@ -2598,11 +2683,12 @@ class EcommerceBillImport(Document):
 	def create_cred_sales_invoice(self):
 		"""Create Sales Invoices from the CRED CSV export.
 
-		This implementation is based on the CRED CSV columns you shared:
-		- Uses **EE Invoice No** (fallback Invoice_id/Suborder No) to group rows into one Sales Invoice
-		- Sets invoice datetime from **Printed At** (fallback **Confirmed At**, then Invoice Date/Order Date)
+		This implementation is based on the CRED CSV columns:
+		- Groups rows by **EE Invoice No** (fallback Invoice_id / Suborder No) into one Sales Invoice
+		- Sets invoice datetime from **Printed At** (fallback **Confirmed At**, then Invoice Date / Order Date)
 		- Uses **Item Quantity** + **Item Price Excluding Tax** to build per-unit rate
-		- Adds GST taxes using provided **tax** / **Tax Rate** values
+		- Adds GST taxes using provided **tax** / **Tax Rate** values (Actual charge type)
+		- Skips cancelled rows (Order Status / Shipping Status / Cancelled At)
 
 		We parse the CSV inside the background job (RQ worker) to avoid bloating the parent
 		document with hidden child tables.
@@ -2611,7 +2697,6 @@ class EcommerceBillImport(Document):
 		import re
 		import pandas as pd
 		from frappe.utils.file_manager import get_file_path
-		from frappe.utils import get_datetime
 
 		errors = []
 
@@ -2645,6 +2730,7 @@ class EcommerceBillImport(Document):
 			frappe.throw(f"Error reading CRED CSV: {str(e)}")
 
 		def normalize_col(col_name: str) -> str:
+			"""Normalize column name to snake_case for lookup."""
 			col_name = (str(col_name) or "").strip().lower()
 			col_name = re.sub(r"[^a-z0-9]+", "_", col_name).strip("_")
 			return col_name
@@ -2652,63 +2738,37 @@ class EcommerceBillImport(Document):
 		col_map = {normalize_col(c): c for c in df.columns}
 
 		def get_cell(row, key: str) -> str:
+			"""Get a cell value by normalized column key, cleaned."""
 			col = col_map.get(key)
 			if not col:
 				return ""
 			return clean_csv_cell(row.get(col))
 
-		def parse_dt(value: str):
-			value = clean_csv_cell(value)
-			if not value:
-				return None
-			# CRED examples: "05/12/25 15:18"
-			for fmt in (
-				"%d/%m/%y %H:%M",
-				"%d/%m/%Y %H:%M",
-				"%d/%m/%y %H:%M:%S",
-				"%d/%m/%Y %H:%M:%S",
-				"%d/%m/%y",
-				"%d/%m/%Y",
-			):
-				try:
-					return datetime.strptime(value, fmt)
-				except Exception:
-					pass
-			try:
-				return get_datetime(value)
-			except Exception:
-				return None
-
-		def parse_rate(rate_str):
-			rate = flt(rate_str)
-			# Sometimes exporters use 0.05 instead of 5
-			if 0 < rate < 1:
-				rate = rate * 100
-			return rate
-
 		def get_place_of_supply(state_name: str):
+			"""Resolve state name to place_of_supply code using state_code_dict."""
 			key = normalize_state_key(state_name)
 			return state_code_dict.get(key)
 
 		def resolve_invoice_datetime(row):
-			# Keep Printed At as invoice datetime; fallback Confirmed At (as requested)
+			"""Resolve invoice datetime: Printed At > Confirmed At > Invoice Date > Order Date."""
 			return (
-				parse_dt(get_cell(row, "printed_at"))
-				or parse_dt(get_cell(row, "confirmed_at"))
-				or parse_dt(get_cell(row, "invoice_date"))
-				or parse_dt(get_cell(row, "order_date"))
+				parse_export_datetime(get_cell(row, "printed_at"))
+				or parse_export_datetime(get_cell(row, "confirmed_at"))
+				or parse_export_datetime(get_cell(row, "invoice_date"))
+				or parse_export_datetime(get_cell(row, "order_date"))
 			)
 
 		def get_invoice_no(row):
+			"""Resolve invoice grouping key: EE Invoice No > Invoice_id > Suborder No > Reference Code."""
 			return (
-				# Prefer Invoice_id (stable internal id), fallback to EE Invoice No
-				get_cell(row, "invoice_id")
-				or get_cell(row, "ee_invoice_no")
+				get_cell(row, "ee_invoice_no")
+				or get_cell(row, "invoice_id")
 				or get_cell(row, "suborder_no")
 				or get_cell(row, "reference_code")
 			)
 
 		def is_cancelled_row(row):
+			"""Check if a row should be skipped as cancelled."""
 			status = get_cell(row, "order_status").upper()
 			ship_status = get_cell(row, "shipping_status").upper()
 			cancelled_at = get_cell(row, "cancelled_at")
@@ -2718,15 +2778,35 @@ class EcommerceBillImport(Document):
 				or bool(cancelled_at)
 			)
 
-		# --- Build invoice groups ---
+		def get_item_code(ecom_sku: str):
+			"""Look up ERP item code from mapping by ecom SKU."""
+			for mapping_row in cred_mapping.ecom_item_table:
+				if mapping_row.ecom_item_id == ecom_sku:
+					return mapping_row.erp_item
+			return None
+
+		def resolve_sku_for_mapping(row):
+			"""Resolve SKU value from row using configured ecom_sku_column_header with fallback to marketplace_sku."""
+			# Use Ecommerce Mapping's ecom_sku_column_header field
+			configured = (cred_mapping.ecom_sku_column_header or "").strip()
+			if configured:
+				configured_key = normalize_col(configured)
+				value = get_cell(row, configured_key)
+				if value:
+					return value
+
+			# Fallback to marketplace_sku
+			return get_cell(row, "marketplace_sku")
+
+		# --- Build invoice groups (skip cancelled rows) ---
 		invoice_groups = {}
 		for row_idx, row in df.iterrows():
 			if is_cancelled_row(row):
-					continue
+				continue
 
 			invoice_no = get_invoice_no(row)
 			if not invoice_no:
-					continue
+				continue
 
 			invoice_groups.setdefault(invoice_no, []).append((row_idx + 1, row))
 
@@ -2743,31 +2823,10 @@ class EcommerceBillImport(Document):
 
 		success_invoices = 0
 
-		def get_item_code(ecom_sku: str):
-			for row in cred_mapping.ecom_item_table:
-				if row.ecom_item_id == ecom_sku:
-					return row.erp_item
-			return None
-
-		def resolve_sku_for_mapping(row):
-			# Allow Ecommerce Mapping to specify which CSV column is the SKU key
-			configured = (cred_mapping.ecom_sku_column_header or "").strip()
-			if configured:
-				configured_key = normalize_col(configured)
-				value = get_cell(row, configured_key)
-				if value:
-					return value
-
-			# Fallbacks (common CRED CSV columns)
-			return (
-				get_cell(row, "accounting_sku")
-				or get_cell(row, "sku")
-				or get_cell(row, "marketplace_sku")
-				or get_cell(row, "listing_ref_no")
-			)
-
 		for count, (invoice_no, rows) in enumerate(invoice_groups.items(), start=1):
+			first_idx = None
 			try:
+				# Skip if already submitted
 				existing_submitted = frappe.db.get_value(
 					"Sales Invoice",
 					{"custom_inv_no": invoice_no, "is_return": 0, "docstatus": 1},
@@ -2782,8 +2841,10 @@ class EcommerceBillImport(Document):
 						message=f"Processed {count}/{total_invoices} invoices (skipped existing)",
 						phase="cred_shipments",
 					)
+					success_invoices += 1  # Count as success (already done)
 					continue
 
+				# Check for draft to resume
 				draft_name = frappe.db.get_value(
 					"Sales Invoice",
 					{"custom_inv_no": invoice_no, "is_return": 0, "docstatus": 0},
@@ -2791,7 +2852,9 @@ class EcommerceBillImport(Document):
 				)
 
 				first_idx, first_row = rows[0]
-				seller_gstin = get_cell(first_row, "seller_gst_num") or get_cell(first_row, "seller_gst_num")
+
+				# --- Resolve header fields ---
+				seller_gstin = get_cell(first_row, "seller_gst_num")
 				if not seller_gstin:
 					raise Exception("Missing Seller GST Num")
 
@@ -2811,6 +2874,7 @@ class EcommerceBillImport(Document):
 				if not place_of_supply:
 					raise Exception(f"State name Is Wrong Please Check: {shipping_state!r}")
 
+				# --- Resolve warehouse from Client Location ---
 				client_location = get_cell(first_row, "client_location")
 				wh_map = next(
 					(
@@ -2827,6 +2891,7 @@ class EcommerceBillImport(Document):
 				if not warehouse:
 					raise Exception(f"Warehouse mapping missing for Client Location: {client_location!r}")
 
+				# --- Create or resume Sales Invoice ---
 				if draft_name:
 					si = frappe.get_doc("Sales Invoice", draft_name)
 				else:
@@ -2838,7 +2903,7 @@ class EcommerceBillImport(Document):
 				si.posting_time = invoice_dt.time()
 				si.custom_inv_no = invoice_no
 				si.custom_ecommerce_operator = self.ecommerce_mapping
-				si.custom_ecommerce_type = self.amazon_type
+				si.custom_ecommerce_type = ""  # CRED doesn't have sub-types like Amazon
 				si.custom_ecommerce_invoice_id = invoice_no
 
 				# Avoid duplicate primary key errors
@@ -2861,13 +2926,16 @@ class EcommerceBillImport(Document):
 					if d.get("custom_ecom_item_id")
 				}
 
+				# --- Tax accumulation ---
 				# Accumulate taxes (Actual) so amounts match the CSV exactly.
 				tax_totals = {"cgst": 0.0, "sgst": 0.0, "igst": 0.0}
-				first_tax_rate = 0.0
+				tax_rates_seen = set()
 
 				customer_state_code = (place_of_supply.split("-")[0] if place_of_supply else "")
 				seller_state_code = (str(seller_gstin)[:2] if str(seller_gstin)[:2].isdigit() else "")
+				is_intra_state = (seller_state_code and customer_state_code and seller_state_code == customer_state_code)
 
+				# --- Process item rows ---
 				for row_idx, row in rows:
 					sku_value = resolve_sku_for_mapping(row)
 					if not sku_value:
@@ -2901,7 +2969,7 @@ class EcommerceBillImport(Document):
 							"qty": qty,
 							"rate": rate,
 							"description": product_name,
-					"warehouse": warehouse,
+							"warehouse": warehouse,
 							"gst_hsn_code": hsn_code,
 							"income_account": cred_mapping.income_account,
 							"custom_ecom_item_id": item_id,
@@ -2910,58 +2978,70 @@ class EcommerceBillImport(Document):
 					if item_id:
 						existing_item_ids.add(item_id)
 
-					row_tax_rate = parse_rate(get_cell(row, "tax_rate"))
+					# --- Tax calculation per row ---
+					row_tax_rate = normalize_tax_rate(flt(get_cell(row, "tax_rate")))
 					row_tax_amount = flt(get_cell(row, "tax"))
+
+					# If tax amount missing but rate present, compute from taxable total
 					if row_tax_amount <= 0 and row_tax_rate and taxable_total:
 						row_tax_amount = taxable_total * (row_tax_rate / 100)
 
-					if row_tax_rate and not first_tax_rate:
-						first_tax_rate = row_tax_rate
+					if row_tax_rate:
+						tax_rates_seen.add(row_tax_rate)
 
+					# Split into CGST/SGST or IGST based on state codes
 					if row_tax_amount > 0:
-						if seller_state_code and customer_state_code and seller_state_code == customer_state_code:
+						if is_intra_state:
 							tax_totals["cgst"] += row_tax_amount / 2
 							tax_totals["sgst"] += row_tax_amount / 2
-				else:
+						else:
 							tax_totals["igst"] += row_tax_amount
 
-				# Reset and apply taxes (Actual) based on totals
+				# --- Check we have items ---
+				if not si.items:
+					raise Exception("No items were added for this invoice (all duplicates or invalid)")
+
+				# --- Apply taxes (On Net Total for proper item tax computation) ---
 				si.taxes = []
+
+				# Determine display rate: if single rate across invoice, use it; else 0
+				display_rate = list(tax_rates_seen)[0] if len(tax_rates_seen) == 1 else 0.0
+
 				if tax_totals["cgst"] > 0:
 					si.append(
 						"taxes",
 						{
-							"charge_type": "Actual",
+							"charge_type": "On Net Total",
 							"account_head": "Output Tax CGST - KGOPL",
-							"rate": (first_tax_rate / 2) if first_tax_rate else 0,
+							"rate": (display_rate / 2) if display_rate else 0,
 							"tax_amount": tax_totals["cgst"],
-							"description": "CGST",
+							"description": "CGST" if len(tax_rates_seen) <= 1 else "CGST (multiple rates)",
 						},
 					)
 				if tax_totals["sgst"] > 0:
 					si.append(
 						"taxes",
 						{
-							"charge_type": "Actual",
+							"charge_type": "On Net Total",
 							"account_head": "Output Tax SGST - KGOPL",
-							"rate": (first_tax_rate / 2) if first_tax_rate else 0,
+							"rate": (display_rate / 2) if display_rate else 0,
 							"tax_amount": tax_totals["sgst"],
-							"description": "SGST",
+							"description": "SGST" if len(tax_rates_seen) <= 1 else "SGST (multiple rates)",
 						},
 					)
 				if tax_totals["igst"] > 0:
 					si.append(
 						"taxes",
 						{
-							"charge_type": "Actual",
+							"charge_type": "On Net Total",
 							"account_head": "Output Tax IGST - KGOPL",
-							"rate": first_tax_rate or 0,
+							"rate": display_rate or 0,
 							"tax_amount": tax_totals["igst"],
-							"description": "IGST",
+							"description": "IGST" if len(tax_rates_seen) <= 1 else "IGST (multiple rates)",
 						},
 					)
-			
-				# Save + submit (deterministic per invoice group)
+
+				# --- Save + submit (deterministic per invoice group) ---
 				si.save(ignore_permissions=True)
 				for it in si.items:
 					it.item_tax_template = ""
@@ -2976,7 +3056,7 @@ class EcommerceBillImport(Document):
 				frappe.db.rollback()
 				errors.append(
 					{
-						"idx": first_idx if "first_idx" in locals() else None,
+						"idx": first_idx,
 						"invoice_id": invoice_no,
 						"event": "CRED Import",
 						"message": str(e),
@@ -2992,22 +3072,22 @@ class EcommerceBillImport(Document):
 				phase="cred_shipments",
 			)
 
-		# Final status + progress
+		# --- Final status + progress ---
 		self.error_json = json.dumps(errors) if errors else ""
 		if errors and success_invoices:
-				self.status = "Partial Success"
+			self.status = "Partial Success"
 		elif errors and not success_invoices:
-				self.status = "Error"
+			self.status = "Error"
 		else:
 			self.status = "Success"
 
-			self.save(ignore_permissions=True)
+		self.save(ignore_permissions=True)
 
 		self._publish_progress(
 			current=total_invoices,
 			total=total_invoices,
 			progress=100,
-			message="CRED Import Completed ✅",
+			message="CRED Import Completed",
 			phase="cred",
 		)
 

@@ -241,25 +241,51 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 });
 
 
+// Global state for progress tracking (persists across form refreshes)
+frappe.ecom_import_progress = frappe.ecom_import_progress || {};
+
 // Realtime progress (Data Import-like dashboard progress bar)
 frappe.realtime.on("data_import_progress", (data) => {
-	const frm = cur_frm;
-	if (!frm || frm.doctype !== "Ecommerce Bill Import") return;
-
 	// Ignore progress meant for Frappe's "Data Import" doctype
 	if (data?.data_import) return;
 
-	// If backend sends docname/doctype, respect it (prevents cross-doctype noise)
-	if (data?.doctype && data.doctype !== frm.doctype) return;
-	if (data?.docname && frm.doc?.name && data.docname !== frm.doc.name) return;
+	// Must have doctype and docname to identify target
+	if (!data?.doctype || data.doctype !== "Ecommerce Bill Import") return;
+	if (!data?.docname) return;
 
+	// Store total in global state so it persists across refreshes
+	if (data.total) {
+		frappe.ecom_import_progress[data.docname] = frappe.ecom_import_progress[data.docname] || {};
+		frappe.ecom_import_progress[data.docname].total = data.total;
+	}
+
+	// Get stored total (use data.total if available, else stored value)
+	const storedState = frappe.ecom_import_progress[data.docname] || {};
+	const total = data.total || storedState.total || 1;
+	const current = data.current ?? 0;
+
+	// Calculate percent
 	let percent = data?.progress;
-	if (percent === undefined && data?.current && data?.total) {
-		percent = Math.floor((data.current * 100) / data.total);
+	if (percent === undefined) {
+		percent = Math.floor((current * 100) / total);
 	}
 	percent = Math.max(0, Math.min(100, percent || 0));
 
-	const message = data?.message || __("Processing…");
+	// Store current progress state
+	frappe.ecom_import_progress[data.docname] = {
+		...storedState,
+		total: total,
+		current: current,
+		percent: percent,
+		message: data?.message || "",
+		lastUpdate: Date.now()
+	};
+
+	// Update UI only if this form is currently open
+	const frm = cur_frm;
+	if (!frm || frm.doctype !== "Ecommerce Bill Import" || frm.doc?.name !== data.docname) return;
+
+	const message = data?.message || `Processing ${current} of ${total}...`;
 	frm.dashboard.show_progress(__("Import Progress"), percent, message);
 	frm.page.set_indicator(__("In Progress"), "orange");
 
@@ -267,7 +293,23 @@ frappe.realtime.on("data_import_progress", (data) => {
 	if (percent >= 100) {
 		setTimeout(() => {
 			frm.dashboard.hide();
+			frm.page.set_indicator(__("Complete"), "green");
+			// Clear stored state
+			delete frappe.ecom_import_progress[data.docname];
 			frm.reload_doc();
 		}, 1500);
-    }
+	}
+});
+
+// Restore progress bar on form load if import is in progress
+frappe.ui.form.on("Ecommerce Bill Import", "onload", function(frm) {
+	if (!frm.doc?.name) return;
+	const storedState = frappe.ecom_import_progress[frm.doc.name];
+
+	// If we have recent stored progress (within last 5 minutes), show it
+	if (storedState && storedState.lastUpdate && (Date.now() - storedState.lastUpdate) < 300000) {
+		const message = storedState.message || `Processing ${storedState.current || 0} of ${storedState.total || 0}...`;
+		frm.dashboard.show_progress(__("Import Progress"), storedState.percent || 0, message);
+		frm.page.set_indicator(__("In Progress"), "orange");
+	}
 });
