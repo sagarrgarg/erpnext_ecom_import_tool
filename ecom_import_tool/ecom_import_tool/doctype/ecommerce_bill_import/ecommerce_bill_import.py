@@ -1611,206 +1611,203 @@ class EcommerceBillImport(Document):
 
 				# -------- Refund Items --------
 				if refund_items and not warehouse_mapping_missing:
-					# if not existing_si:
-					# 	error_names.append(invoice_no)
-					# 	errors.append({
-					# 		"idx": refund_items[0][0],
-					# 		"invoice_id": invoice_no,
-					# 		"message": f"Refund requested but original submitted invoice not found for {invoice_no}."
-					# 	})
-					# 	continue
-					credit_note_no = refund_items[0][1].get("credit_note_no")
-					if not credit_note_no:
-						errors.append({
-							"idx": refund_items[0][0],
-							"invoice_id": invoice_no,
-							"message": "Missing Credit Note No for refund row(s)"
-						})
-						continue
+					# Sub-group refund items by credit_note_no so each unique credit note creates its own return
+					cn_groups = {}
+					for x in refund_items:
+						cn = (x[1].get("credit_note_no") or "").strip()
+						if cn:
+							cn_groups.setdefault(cn, []).append(x)
+						else:
+							errors.append({
+								"idx": x[0],
+								"invoice_id": invoice_no,
+								"message": "Missing Credit Note No for refund row"
+							})
 
-					# Skip if this credit note return invoice already exists (idempotent re-runs)
-					existing_return = frappe.db.get_value(
-						"Sales Invoice",
-						{"custom_ecommerce_invoice_id": credit_note_no, "is_return": 1, "docstatus": 1},
-						"name",
-					)
-					if existing_return:
-						# Return invoice already created for this credit note; treat as processed
-						percent = int((count / total_invoices) * 100) if total_invoices else 100
-						self._publish_progress(
-							current=count,
-							total=total_invoices,
-							progress=percent,
-							message=f"Processed {count}/{total_invoices} invoices",
-							phase="amazon_mtr_b2c",
+					for credit_note_no, cn_refund_items in cn_groups.items():
+						# Skip if this credit note return invoice already exists (idempotent re-runs)
+						existing_return = frappe.db.get_value(
+							"Sales Invoice",
+							{"custom_ecommerce_invoice_id": credit_note_no, "is_return": 1, "docstatus": 1},
+							"name",
 						)
-						frappe.db.commit()
-						continue
+						if existing_return:
+							# Return invoice already created for this credit note; treat as processed
+							percent = int((count / total_invoices) * 100) if total_invoices else 100
+							self._publish_progress(
+								current=count,
+								total=total_invoices,
+								progress=percent,
+								message=f"Processed {count}/{total_invoices} invoices",
+								phase="amazon_mtr_b2c",
+							)
+							frappe.db.commit()
+							continue
 
-					# Ecommerce GSTIN is mandatory for returns too
-					mapped_ecommerce_gstin = resolve_ecommerce_gstin_from_mapping(
-						amazon, refund_items[0][1].seller_gstin
-					)
-					if not mapped_ecommerce_gstin:
-						raise Exception(
-							f"Ecommerce GSTIN mapping missing for Seller GSTIN: {refund_items[0][1].seller_gstin} "
-							f"(Credit Note No: {credit_note_no}, Invoice No: {invoice_no}). "
-							f"Please add it in Ecommerce Mapping '{amazon.name}' -> Ecommerce GSTIN Mapping."
+						# Ecommerce GSTIN is mandatory for returns too
+						mapped_ecommerce_gstin = resolve_ecommerce_gstin_from_mapping(
+							amazon, cn_refund_items[0][1].seller_gstin
 						)
-
-					draft_return = frappe.db.get_value(
-						"Sales Invoice",
-						{"custom_ecommerce_invoice_id": credit_note_no, "is_return": 1, "docstatus": 0},
-						"name",
-					)
-
-					ritems_append = []
-					si_error = []
-					if draft_return:
-						si_return = frappe.get_doc("Sales Invoice", draft_return)
-						si_return.is_return = 1
-					else:
-						si_return = frappe.new_doc("Sales Invoice")
-						si_return.is_return = 1
-						si_return.customer = val
-						si_return.set_posting_time = 1
-
-						# Parse the datetime and add 1 minute for returns
-						credit_note_dt = parse_export_datetime(refund_items[0][1].get("credit_note_date"))
-						if not credit_note_dt:
+						if not mapped_ecommerce_gstin:
 							raise Exception(
-								f"Invalid Credit Note Date: {refund_items[0][1].get('credit_note_date')}"
+								f"Ecommerce GSTIN mapping missing for Seller GSTIN: {cn_refund_items[0][1].seller_gstin} "
+								f"(Credit Note No: {credit_note_no}, Invoice No: {invoice_no}). "
+								f"Please add it in Ecommerce Mapping '{amazon.name}' -> Ecommerce GSTIN Mapping."
 							)
-						si_return.posting_date = credit_note_dt.date()
-						si_return.posting_time = credit_note_dt.time()
-						si_return.custom_ecommerce_operator = self.ecommerce_mapping
-						si_return.custom_ecommerce_type = self.amazon_type
-						si_return.custom_inv_no = invoice_no
-						si_return.custom_ecommerce_invoice_id = credit_note_no
-						# Avoid duplicate primary key errors if an invoice with this name already exists
-						existing_by_name = frappe.db.exists("Sales Invoice", credit_note_no)
-						if not existing_by_name:
-							si_return.__newname = credit_note_no
-						si_return.taxes = []
-						si_return.update_stock = 1
 
-					# Always set ecommerce_gstin from mapping (required for GST reporting)
-					si_return.ecommerce_gstin = mapped_ecommerce_gstin
+						draft_return = frappe.db.get_value(
+							"Sales Invoice",
+							{"custom_ecommerce_invoice_id": credit_note_no, "is_return": 1, "docstatus": 0},
+							"name",
+						)
 
-					# De-duplicate within this return invoice only
-					existing_return_item_ids = {
-						d.get("custom_ecom_item_id")
-						for d in (si_return.get("items") or [])
-						if d.get("custom_ecom_item_id")
-					}
-					for idx, child_row in refund_items:
-						try:
-							shipment_item_id = child_row.shipment_item_id
-							if shipment_item_id and shipment_item_id in existing_return_item_ids:
-								continue
+						ritems_append = []
+						si_error = []
+						if draft_return:
+							si_return = frappe.get_doc("Sales Invoice", draft_return)
+							si_return.is_return = 1
+						else:
+							si_return = frappe.new_doc("Sales Invoice")
+							si_return.is_return = 1
+							si_return.customer = val
+							si_return.set_posting_time = 1
 
-							itemcode = next(
-								(i.erp_item for i in amazon.ecom_item_table if i.ecom_item_id == child_row.get(amazon.ecom_sku_column_header)),
-								None
-							)
-							if not itemcode:
-								si_error.append(invoice_no)
-								raise Exception(f"Item mapping not found for SKU: {child_row.get(amazon.ecom_sku_column_header)}")
+							# Parse the datetime and add 1 minute for returns
+							credit_note_dt = parse_export_datetime(cn_refund_items[0][1].get("credit_note_date"))
+							if not credit_note_dt:
+								raise Exception(
+									f"Invalid Credit Note Date: {cn_refund_items[0][1].get('credit_note_date')}"
+								)
+							si_return.posting_date = credit_note_dt.date()
+							si_return.posting_time = credit_note_dt.time()
+							si_return.custom_ecommerce_operator = self.ecommerce_mapping
+							si_return.custom_ecommerce_type = self.amazon_type
+							si_return.custom_inv_no = invoice_no
+							si_return.custom_ecommerce_invoice_id = credit_note_no
+							# Avoid duplicate primary key errors if an invoice with this name already exists
+							existing_by_name = frappe.db.exists("Sales Invoice", credit_note_no)
+							if not existing_by_name:
+								si_return.__newname = credit_note_no
+							si_return.taxes = []
+							si_return.update_stock = 1
 
-							warehouse, location, com_address = None, None, None
-							warehouse_id = normalize_warehouse_id(child_row.warehouse_id)
-							for wh_map in amazon.ecommerce_warehouse_mapping:
-								if wh_map.ecom_warehouse_id == warehouse_id:
-									warehouse = wh_map.erp_warehouse
-									location = wh_map.location
-									com_address = wh_map.erp_address
-									break
-							if not warehouse:
-								if not warehouse_id:
-									warehouse = amazon.default_company_warehouse
-									location = amazon.default_company_location
-									com_address = amazon.default_company_address
-								else:
-									warehouse_mapping_missing = True
-									raise Exception(f"Warehouse Mapping not found for Warehouse Id: {warehouse_id}")
+						# Always set ecommerce_gstin from mapping (required for GST reporting)
+						si_return.ecommerce_gstin = mapped_ecommerce_gstin
 
-							if not si_return.location:
-								si_return.location = location
-							if not si_return.set_warehouse:
-								si_return.set_warehouse = warehouse
-							si_return.company_address = com_address
-							if child_row.ship_to_state:
-								state = child_row.ship_to_state
-								if not state_code_dict.get(str(state.lower())):
+						# De-duplicate within this return invoice only
+						existing_return_item_ids = {
+							d.get("custom_ecom_item_id")
+							for d in (si_return.get("items") or [])
+							if d.get("custom_ecom_item_id")
+						}
+						for idx, child_row in cn_refund_items:
+							try:
+								shipment_item_id = child_row.shipment_item_id
+								if shipment_item_id and shipment_item_id in existing_return_item_ids:
+									continue
+
+								itemcode = next(
+									(i.erp_item for i in amazon.ecom_item_table if i.ecom_item_id == child_row.get(amazon.ecom_sku_column_header)),
+									None
+								)
+								if not itemcode:
 									si_error.append(invoice_no)
-									raise Exception(f"State name Is Wrong Please Check")
-								si_return.place_of_supply = state_code_dict.get(str(state.lower()))
-							si_return.ecommerce_gstin = mapped_ecommerce_gstin
+									raise Exception(f"Item mapping not found for SKU: {child_row.get(amazon.ecom_sku_column_header)}")
 
-							hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
-							si_return.append("items", {
-								"item_code": itemcode,
-								"qty": -abs(flt(child_row.quantity)),
-								"rate": abs(flt(child_row.tax_exclusive_gross)) / abs(flt(child_row.quantity)),
-								"description": child_row.item_description,
-								"warehouse": warehouse,
-								"gst_hsn_code": hsn_code,
-								"income_account": amazon.income_account,
-								"tax_rate": flt(child_row.total_tax_amount),
-								"margin_type": "Amount" if flt(child_row.item_promo_discount) > 0 else None,
-								"margin_rate_or_amount": flt(child_row.item_promo_discount),
-								"custom_ecom_item_id": shipment_item_id
-							})
-							if shipment_item_id:
-								existing_return_item_ids.add(shipment_item_id)
-							ritems_append.append(itemcode)
-
-							for tax_type, rate, amount, acc_head in [
-								("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
-								("SGST", flt(child_row.sgst_rate) + flt(child_row.utgst_rate), flt(child_row.sgst_tax) + flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
-								("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), "Output Tax IGST - KGOPL")
-							]:
-								if amount:
-									rate = normalize_tax_rate(rate)
-									existing_tax = next((t for t in si_return.taxes if t.account_head == acc_head), None)
-									if existing_tax:
-										existing_tax.tax_amount += amount
-										existing_tax.rate = rate
+								warehouse, location, com_address = None, None, None
+								warehouse_id = normalize_warehouse_id(child_row.warehouse_id)
+								for wh_map in amazon.ecommerce_warehouse_mapping:
+									if wh_map.ecom_warehouse_id == warehouse_id:
+										warehouse = wh_map.erp_warehouse
+										location = wh_map.location
+										com_address = wh_map.erp_address
+										break
+								if not warehouse:
+									if not warehouse_id:
+										warehouse = amazon.default_company_warehouse
+										location = amazon.default_company_location
+										com_address = amazon.default_company_address
 									else:
-										si_return.append("taxes", {
-											"charge_type": "On Net Total",
-											"account_head": acc_head,
-											"rate": rate,
-											"tax_amount": amount,
-											"description": tax_type
-										})
-						except Exception as item_error:
-							si_error.append(invoice_no)
-							errors.append({
-								"idx": idx,
-								"invoice_id": invoice_no,
-								"message": f"Refund item error: {item_error}"
-							})
+										warehouse_mapping_missing = True
+										raise Exception(f"Warehouse Mapping not found for Warehouse Id: {warehouse_id}")
 
-					try:
-						if len(ritems_append)>0 and not warehouse_mapping_missing:
-							si_return.save(ignore_permissions=True)
-							for j in si_return.items:
-								j.item_tax_template = ""
-								j.item_tax_rate = frappe._dict()
-							si_return.save(ignore_permissions=True)
+								if not si_return.location:
+									si_return.location = location
+								if not si_return.set_warehouse:
+									si_return.set_warehouse = warehouse
+								si_return.company_address = com_address
+								if child_row.ship_to_state:
+									state = child_row.ship_to_state
+									if not state_code_dict.get(str(state.lower())):
+										si_error.append(invoice_no)
+										raise Exception("State name Is Wrong Please Check")
+									si_return.place_of_supply = state_code_dict.get(str(state.lower()))
+								si_return.ecommerce_gstin = mapped_ecommerce_gstin
 
-							if invoice_no not in si_error:
-								si_return.submit()
-								frappe.db.commit()
-								success_count += len(refund_items)
-					except Exception as submit_error:
-						for idx, _ in refund_items:
-							errors.append({
-								"idx": idx,
-								"invoice_id": invoice_no,
-								"message": f"Error submitting refund invoice: {submit_error}"
-							})
+								hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
+								si_return.append("items", {
+									"item_code": itemcode,
+									"qty": -abs(flt(child_row.quantity)),
+									"rate": abs(flt(child_row.tax_exclusive_gross)) / abs(flt(child_row.quantity)),
+									"description": child_row.item_description,
+									"warehouse": warehouse,
+									"gst_hsn_code": hsn_code,
+									"income_account": amazon.income_account,
+									"tax_rate": flt(child_row.total_tax_amount),
+									"margin_type": "Amount" if flt(child_row.item_promo_discount) > 0 else None,
+									"margin_rate_or_amount": flt(child_row.item_promo_discount),
+									"custom_ecom_item_id": shipment_item_id
+								})
+								if shipment_item_id:
+									existing_return_item_ids.add(shipment_item_id)
+								ritems_append.append(itemcode)
+
+								for tax_type, rate, amount, acc_head in [
+									("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
+									("SGST", flt(child_row.sgst_rate) + flt(child_row.utgst_rate), flt(child_row.sgst_tax) + flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
+									("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), "Output Tax IGST - KGOPL")
+								]:
+									if amount:
+										rate = normalize_tax_rate(rate)
+										existing_tax = next((t for t in si_return.taxes if t.account_head == acc_head), None)
+										if existing_tax:
+											existing_tax.tax_amount += amount
+											existing_tax.rate = rate
+										else:
+											si_return.append("taxes", {
+												"charge_type": "On Net Total",
+												"account_head": acc_head,
+												"rate": rate,
+												"tax_amount": amount,
+												"description": tax_type
+											})
+							except Exception as item_error:
+								si_error.append(invoice_no)
+								errors.append({
+									"idx": idx,
+									"invoice_id": invoice_no,
+									"message": f"Refund item error: {item_error}"
+								})
+
+						try:
+							if len(ritems_append) > 0 and not warehouse_mapping_missing:
+								si_return.save(ignore_permissions=True)
+								for j in si_return.items:
+									j.item_tax_template = ""
+									j.item_tax_rate = frappe._dict()
+								si_return.save(ignore_permissions=True)
+
+								if invoice_no not in si_error:
+									si_return.submit()
+									frappe.db.commit()
+									success_count += len(cn_refund_items)
+						except Exception as submit_error:
+							for idx, _ in cn_refund_items:
+								errors.append({
+									"idx": idx,
+									"invoice_id": invoice_no,
+									"message": f"Error submitting refund invoice: {submit_error}"
+								})
 
 			except Exception as e:
 				for idx, _ in items_data:
