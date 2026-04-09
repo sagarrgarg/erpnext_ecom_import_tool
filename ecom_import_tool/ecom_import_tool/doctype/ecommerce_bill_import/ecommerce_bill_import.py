@@ -177,6 +177,44 @@ def normalize_tax_rate(rate):
 	return rate
 
 
+def safe_refund_qty_rate(quantity, tax_exclusive_gross):
+	"""Compute safe qty and rate for a refund/return Sales Invoice line.
+
+	Amazon refund rows sometimes have blank or zero quantity (e.g. amount-only
+	adjustments).  Dividing by zero would crash the import.
+
+	When qty is zero/blank the caller should create a Debit Note
+	(is_debit_note=1) which natively accepts qty=0 in ERPNext.  For mixed
+	groups (some rows with qty, some without) the caller falls back to
+	qty=-1 on the zero rows since is_return and is_debit_note are mutually
+	exclusive on a single Sales Invoice.
+
+	Args:
+		quantity: raw quantity value from the MTR row (may be str, None, 0).
+		tax_exclusive_gross: tax-exclusive line amount from the MTR row.
+
+	Returns:
+		tuple(qty, rate, is_zero_qty):
+			qty   – negative quantity for the return line, or 0 for debit note rows.
+			rate  – per-unit rate (always positive).
+			is_zero_qty – True when original qty was zero/blank.
+	"""
+	import math
+
+	abs_qty = abs(flt(quantity))
+	abs_amount = abs(flt(tax_exclusive_gross))
+
+	if abs_qty and not math.isnan(abs_qty):
+		if math.isnan(abs_amount):
+			abs_amount = 0
+		return -abs_qty, abs_amount / abs_qty, False
+
+	if math.isnan(abs_amount):
+		abs_amount = 0
+
+	return 0, abs_amount, True
+
+
 def resolve_ecommerce_gstin_from_mapping(ecommerce_mapping, seller_gstin):
 	"""Resolve `Sales Invoice.ecommerce_gstin` from `Ecommerce Mapping.ecommerce_gstin_mapping`.
 
@@ -1140,14 +1178,6 @@ class EcommerceBillImport(Document):
 				si_return_error=[]
 				if refund_items and not warehouse_mapping_missing:
 					try:
-						# if not existing_si:
-						# 	si_return_error.append(invoice_no)
-						# 	errors.append({
-						# 		"idx": refund_items[0][0],
-						# 		"invoice_id": invoice_no,
-						# 		"message": f"Refund requested but original submitted invoice not found for {invoice_no}."
-						# 	})
-
 						credit_note_no = refund_items[0][1].get("credit_note_no")
 						if not credit_note_no:
 							si_return_error.append(invoice_no)
@@ -1158,14 +1188,20 @@ class EcommerceBillImport(Document):
 							})
 							raise Exception("Missing Credit Note No")
 
-						# Skip if this credit note return invoice already exists (idempotent re-runs)
+						# Pre-scan: determine if all refund rows have zero qty
+						all_zero_qty = all(
+							safe_refund_qty_rate(r[1].quantity, r[1].tax_exclusive_gross)[2]
+							for r in refund_items
+						)
+						use_debit_note = all_zero_qty
+
+						# Skip if this credit note already exists (idempotent re-runs)
 						existing_return = frappe.db.get_value(
 							"Sales Invoice",
-							{"custom_ecommerce_invoice_id": credit_note_no, "is_return": 1, "docstatus": 1},
+							{"custom_ecommerce_invoice_id": credit_note_no, "docstatus": 1},
 							"name",
 						)
 						if existing_return:
-							# Return invoice already created for this credit note; treat as processed
 							percent = int((count / total_invoices) * 100) if total_invoices else 100
 							self._publish_progress(
 								current=count,
@@ -1190,21 +1226,24 @@ class EcommerceBillImport(Document):
 
 						draft_return = frappe.db.get_value(
 							"Sales Invoice",
-							{"custom_ecommerce_invoice_id": credit_note_no, "is_return": 1, "docstatus": 0},
+							{"custom_ecommerce_invoice_id": credit_note_no, "docstatus": 0},
 							"name",
 						)
 
 						if draft_return:
 							si_return = frappe.get_doc("Sales Invoice", draft_return)
-							si_return.is_return = 1
+							if use_debit_note:
+								si_return.is_debit_note = 1
+								si_return.is_return = 0
+							else:
+								si_return.is_return = 1
+								si_return.is_debit_note = 0
 						else:
 							si_return = frappe.new_doc("Sales Invoice")
-							si_return.is_return = 1
 							si_return.custom_ecommerce_operator = self.ecommerce_mapping
 							si_return.custom_ecommerce_type = self.amazon_type
 							si_return.customer = customer
 							si_return.set_posting_time = 1
-							# Parse the datetime and add 1 minute for returns
 							credit_note_dt = parse_export_datetime(refund_items[0][1].get("credit_note_date"))
 							if not credit_note_dt:
 								raise Exception(
@@ -1213,15 +1252,21 @@ class EcommerceBillImport(Document):
 							si_return.posting_date = credit_note_dt.date()
 							si_return.posting_time = credit_note_dt.time()
 							si_return.custom_ecommerce_invoice_id = credit_note_no
-							# Avoid duplicate primary key errors if an invoice with this name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", credit_note_no)
 							if not existing_by_name:
 								si_return.__newname = credit_note_no
 							si_return.custom_inv_no = invoice_no
 							si_return.taxes = []
-							si_return.update_stock = 1
 
-						# Always set ecommerce_gstin from mapping (required for GST reporting)
+							if use_debit_note:
+								si_return.is_debit_note = 1
+								si_return.is_return = 0
+								si_return.update_stock = 0
+							else:
+								si_return.is_return = 1
+								si_return.is_debit_note = 0
+								si_return.update_stock = 1
+
 						si_return.ecommerce_gstin = mapped_ecommerce_gstin
 
 						# De-duplicate within this return invoice only
@@ -1276,10 +1321,24 @@ class EcommerceBillImport(Document):
 								si_return.ecommerce_gstin = mapped_ecommerce_gstin
 								hsn_code=frappe.db.get_value("Item",itemcode,"gst_hsn_code")
 
+								refund_qty, refund_rate, is_zero_qty = safe_refund_qty_rate(
+									child_row.quantity, child_row.tax_exclusive_gross
+								)
+
+								if use_debit_note:
+									line_qty = 0
+									line_rate = refund_rate
+								elif is_zero_qty:
+									line_qty = -1
+									line_rate = refund_rate
+								else:
+									line_qty = refund_qty
+									line_rate = refund_rate
+
 								si_return.append("items", {
 									"item_code": itemcode,
-									"qty": -abs(flt(child_row.quantity)),
-									"rate": abs(flt(child_row.tax_exclusive_gross)) / abs(flt(child_row.quantity)),
+									"qty": line_qty,
+									"rate": line_rate,
 									"description": child_row.item_description,
 									"gst_hsn_code":hsn_code,
 									"warehouse": warehouse,
@@ -1318,6 +1377,7 @@ class EcommerceBillImport(Document):
 									"invoice_id": invoice_no,
 									"message": f"Refund item error: {str(item_error)}"
 								})
+
 						if len(items_append)>0 and not warehouse_mapping_missing:
 							si_return.save(ignore_permissions=True)
 							for j in si_return.items:
@@ -1334,7 +1394,7 @@ class EcommerceBillImport(Document):
 							errors.append({
 								"idx": idx,
 								"invoice_id": invoice_no,
-								"message": f"Shipment item error: {refund_err}"
+								"message": f"Refund item error: {refund_err}"
 							})
 
 			except Exception as e:
@@ -1625,14 +1685,20 @@ class EcommerceBillImport(Document):
 							})
 
 					for credit_note_no, cn_refund_items in cn_groups.items():
-						# Skip if this credit note return invoice already exists (idempotent re-runs)
+						# Pre-scan: determine if all rows in this credit note group have zero qty
+						all_zero_qty = all(
+							safe_refund_qty_rate(r[1].quantity, r[1].tax_exclusive_gross)[2]
+							for r in cn_refund_items
+						)
+						use_debit_note = all_zero_qty
+
+						# Skip if this credit note already exists (idempotent re-runs)
 						existing_return = frappe.db.get_value(
 							"Sales Invoice",
-							{"custom_ecommerce_invoice_id": credit_note_no, "is_return": 1, "docstatus": 1},
+							{"custom_ecommerce_invoice_id": credit_note_no, "docstatus": 1},
 							"name",
 						)
 						if existing_return:
-							# Return invoice already created for this credit note; treat as processed
 							percent = int((count / total_invoices) * 100) if total_invoices else 100
 							self._publish_progress(
 								current=count,
@@ -1657,7 +1723,7 @@ class EcommerceBillImport(Document):
 
 						draft_return = frappe.db.get_value(
 							"Sales Invoice",
-							{"custom_ecommerce_invoice_id": credit_note_no, "is_return": 1, "docstatus": 0},
+							{"custom_ecommerce_invoice_id": credit_note_no, "docstatus": 0},
 							"name",
 						)
 
@@ -1665,14 +1731,17 @@ class EcommerceBillImport(Document):
 						si_error = []
 						if draft_return:
 							si_return = frappe.get_doc("Sales Invoice", draft_return)
-							si_return.is_return = 1
+							if use_debit_note:
+								si_return.is_debit_note = 1
+								si_return.is_return = 0
+							else:
+								si_return.is_return = 1
+								si_return.is_debit_note = 0
 						else:
 							si_return = frappe.new_doc("Sales Invoice")
-							si_return.is_return = 1
 							si_return.customer = val
 							si_return.set_posting_time = 1
 
-							# Parse the datetime and add 1 minute for returns
 							credit_note_dt = parse_export_datetime(cn_refund_items[0][1].get("credit_note_date"))
 							if not credit_note_dt:
 								raise Exception(
@@ -1684,12 +1753,19 @@ class EcommerceBillImport(Document):
 							si_return.custom_ecommerce_type = self.amazon_type
 							si_return.custom_inv_no = invoice_no
 							si_return.custom_ecommerce_invoice_id = credit_note_no
-							# Avoid duplicate primary key errors if an invoice with this name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", credit_note_no)
 							if not existing_by_name:
 								si_return.__newname = credit_note_no
 							si_return.taxes = []
-							si_return.update_stock = 1
+
+							if use_debit_note:
+								si_return.is_debit_note = 1
+								si_return.is_return = 0
+								si_return.update_stock = 0
+							else:
+								si_return.is_return = 1
+								si_return.is_debit_note = 0
+								si_return.update_stock = 1
 
 						# Always set ecommerce_gstin from mapping (required for GST reporting)
 						si_return.ecommerce_gstin = mapped_ecommerce_gstin
@@ -1745,10 +1821,25 @@ class EcommerceBillImport(Document):
 								si_return.ecommerce_gstin = mapped_ecommerce_gstin
 
 								hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
+
+								refund_qty, refund_rate, is_zero_qty = safe_refund_qty_rate(
+									child_row.quantity, child_row.tax_exclusive_gross
+								)
+
+								if use_debit_note:
+									line_qty = 0
+									line_rate = refund_rate
+								elif is_zero_qty:
+									line_qty = -1
+									line_rate = refund_rate
+								else:
+									line_qty = refund_qty
+									line_rate = refund_rate
+
 								si_return.append("items", {
 									"item_code": itemcode,
-									"qty": -abs(flt(child_row.quantity)),
-									"rate": abs(flt(child_row.tax_exclusive_gross)) / abs(flt(child_row.quantity)),
+									"qty": line_qty,
+									"rate": line_rate,
 									"description": child_row.item_description,
 									"warehouse": warehouse,
 									"gst_hsn_code": hsn_code,

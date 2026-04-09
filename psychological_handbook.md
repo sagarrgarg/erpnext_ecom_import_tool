@@ -31,6 +31,18 @@ Ecom Import Tool is an **e-commerce MTR ingestion layer** that:
 
 **Intent:** Re-importing the same MTR file should not create duplicate invoices or returns. Existing submitted documents are detected by `custom_ecommerce_invoice_id` (for returns) or `custom_inv_no` (for shipments).
 
+### 2.4 Zero-Quantity Refund Handling (Debit Note)
+
+**Intent:** Amazon refund rows with blank/zero quantity represent amount-only adjustments (e.g. goodwill credits). They must not crash the import and must not silently be skipped.
+
+**Preferred approach:** Use ERPNext's native `is_debit_note` flag ("Is Rate Adjustment Entry (Debit Note)") on the Sales Invoice. This is purpose-built for qty=0 entries — `validate_qty_is_not_zero()` is skipped, `amount = flt(rate)` is computed directly, and India Compliance classifies it correctly as "Debit Note" in GSTR-1.
+
+**Constraint:** `is_return` and `is_debit_note` are **mutually exclusive** on a single Sales Invoice (India Compliance throws an error if both are set). Therefore:
+- When all rows in a refund group have qty=0 → create a Debit Note.
+- When rows are mixed (some qty=0, some qty>0) → create a Return and use `qty=-1` for the zero-qty rows as fallback.
+
+**Rationale:** A zero-quantity refund has no stock implication; it is purely a financial adjustment. The debit note approach gives correct accounting classification without artificial qty values.
+
 ---
 
 ## 3. Constraints
@@ -46,6 +58,7 @@ Ecom Import Tool is an **e-commerce MTR ingestion layer** that:
 1. **Treating all refund items in an invoice group as one block** – Amazon can issue multiple credit notes per invoice; sub-group by `credit_note_no`.
 2. **Silent exclusion of rows** – Missing Credit Note No or invalid data should surface as import errors.
 3. **Hardcoded account/tax heads** – Use Ecommerce Mapping and platform config where available.
+4. **Dividing by quantity without a zero guard** – Always use `safe_refund_qty_rate()` for refund lines to prevent `ZeroDivisionError` on blank/zero qty rows.
 
 ---
 

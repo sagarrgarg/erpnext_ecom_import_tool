@@ -51,6 +51,22 @@ Ecom Import Tool extends ERPNext/Frappe with:
 - **Impacted:** `create_sales_invoice_mtr_b2c()` – refund block (lines ~1612–1810).
 - **Migration:** None. Re-importing MTR B2C files will now create all credit notes correctly.
 
+### 3.4 Zero-Quantity Refund — Debit Note Approach (2026)
+
+- **What:** Amazon refund rows sometimes arrive with blank or zero quantity (amount-only adjustments). The helper `safe_refund_qty_rate()` prevents `ZeroDivisionError` and returns `qty=0` with `is_zero_qty=True` for these rows.
+- **Why:** Amazon MTR reports can contain refund rows where only the monetary amount is populated and quantity is blank/0. Previously this caused a hard crash during import.
+- **Document type selection (pre-scan):** Before creating the return document, all refund rows in the group are scanned:
+  - **All rows qty=0:** Create a **Debit Note** (`is_debit_note=1`, `is_return=0`, `update_stock=0`, `qty=0`, `rate=abs(amount)`). ERPNext natively supports qty=0 on debit notes — no workaround needed.
+  - **All rows qty>0:** Create a normal **Return / Credit Note** (`is_return=1`, `is_debit_note=0`, `update_stock=1`, `qty=-abs(qty)`, `rate=abs(amount)/abs(qty)`).
+  - **Mixed (some qty=0, some qty>0):** Create a **Return / Credit Note** (`is_return=1`). Normal rows use standard negative qty; zero-qty rows use `qty=-1`, `rate=abs(amount)` as fallback (since `is_return` and `is_debit_note` are mutually exclusive per India Compliance).
+- **`safe_refund_qty_rate()` return values:**
+  - `abs(quantity) > 0`: `(-abs_qty, abs_amount / abs_qty, False)`
+  - `abs(quantity) == 0` (or blank/None/NaN): `(0, abs_amount, True)`
+- **Scope:** Applied to both `create_sales_invoice_mtr_b2b()` and `create_sales_invoice_mtr_b2c()` refund loops.
+- **Idempotency:** The existing-document check now uses `custom_ecommerce_invoice_id` + `docstatus=1` without filtering on `is_return`, so both debit notes and returns are detected.
+- **GST classification:** India Compliance classifies `is_debit_note` invoices as "Debit Note" in GSTR-1 automatically.
+- **Migration:** None. Existing imports are unaffected; only newly imported files benefit.
+
 ---
 
 ## 4. Key Dependencies
