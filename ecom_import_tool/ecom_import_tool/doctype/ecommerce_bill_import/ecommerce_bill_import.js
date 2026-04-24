@@ -8,16 +8,15 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 		// if(frm.doc.status=="Pending" || frm.doc.status=="Partial Success" || frm.doc.status=="Error" ){
 		// Add import button if file is uploaded
 			frm.add_custom_button(__("Start Import"), function() {
-				frm.call({
-					method: "create_invoice",
-					doc: frm.doc,
+				frappe.call({
+					method: "frappe.client.run_doc_method",
+					args: {
+						dt: frm.doc.doctype,
+						dn: frm.doc.name,
+						method: "create_invoice",
+					},
 					callback: function(r) {
-						if(r.message){
-							frm.refresh_field("error_html");
-							frm.reload_doc();
-						}
-						// Refresh the entire form to update all fields
-						
+						frm.reload_doc();
 					}
 				});
 			}).addClass("btn-primary");
