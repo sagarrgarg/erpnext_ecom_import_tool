@@ -1037,6 +1037,7 @@ class EcommerceBillImport(Document):
 							si = frappe.get_doc("Sales Invoice", existing_si_draft)
 						else:
 							si = frappe.new_doc("Sales Invoice")
+							si.flags.ignore_pricing_rule = 1
 							si.customer = customer
 							si.set_posting_time=1
 							# Parse the datetime and add 2 seconds
@@ -1509,6 +1510,7 @@ class EcommerceBillImport(Document):
 						si = frappe.get_doc("Sales Invoice", existing_si_draft)
 					else:
 						si = frappe.new_doc("Sales Invoice")
+						si.flags.ignore_pricing_rule = 1
 						si.customer = val
 						si.set_posting_time=1
 						# Parse the datetime and add 2 seconds
@@ -2327,6 +2329,7 @@ class EcommerceBillImport(Document):
 					ecommerce_gstin = get_gstin(first.seller_gstin)
 
 					si = frappe.new_doc("Sales Invoice")
+					si.flags.ignore_pricing_rule = 1
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
@@ -2574,6 +2577,7 @@ class EcommerceBillImport(Document):
 					ecommerce_gstin = get_gstin(first.seller_gstin)
 
 					si = frappe.new_doc("Sales Invoice")
+					si.flags.ignore_pricing_rule = 1
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
@@ -2835,6 +2839,7 @@ class EcommerceBillImport(Document):
 					si = frappe.get_doc("Sales Invoice", draft_name)
 				else:
 					si = frappe.new_doc("Sales Invoice")
+					si.flags.ignore_pricing_rule = 1
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = posting_date
@@ -3123,6 +3128,7 @@ class EcommerceBillImport(Document):
 					si = frappe.get_doc("Sales Invoice", draft_name)
 				else:
 					si = frappe.new_doc("Sales Invoice")
+					si.flags.ignore_pricing_rule = 1
 
 				si.customer = customer
 				si.set_posting_time = 1
@@ -3438,6 +3444,7 @@ class EcommerceBillImport(Document):
 					ecommerce_gstin = get_gstin(first.seller_gstin)
 
 					si = frappe.new_doc("Sales Invoice")
+					si.flags.ignore_pricing_rule = 1
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
@@ -3664,6 +3671,7 @@ class EcommerceBillImport(Document):
 					ecommerce_gstin = get_gstin(first.seller_gstin)
 
 					si = frappe.new_doc("Sales Invoice")
+					si.flags.ignore_pricing_rule = 1
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
