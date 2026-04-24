@@ -372,20 +372,7 @@ class EcommerceBillImport(Document):
 		frappe.publish_realtime("data_import_progress", payload, user=frappe.session.user)
 
 	def before_save(self):
-		if self.get("__islocal"):
-			if self.ecommerce_mapping=="Amazon":
-				if self.amazon_type=="MTR B2B":
-					self.show_preview()
-				elif self.amazon_type=="MTR B2C":
-					self.append_mtr_b2c()
-				else:
-					self.append_stock_transfer_attachment()
-			if self.ecommerce_mapping=="CRED":
-				self.cred_append()
-			if self.ecommerce_mapping=="Flipkart":
-				self.append_flipkart()
-			if self.ecommerce_mapping=="Jiomart":
-				self.append_jio_mart()
+		pass
 
 
 	
@@ -411,6 +398,8 @@ class EcommerceBillImport(Document):
 
 	def invoice_creation(self):
 		frappe.msgprint("Data Import Started")
+		self._parse_attached_file()
+
 		if self.ecommerce_mapping=="Amazon":
 			if self.amazon_type=="MTR B2B":
 				self.create_sales_invoice_mtr_b2b()
@@ -430,7 +419,29 @@ class EcommerceBillImport(Document):
 		if self.ecommerce_mapping=="Jiomart":
 			self.create_jio_mart()
 			frappe.msgprint("Jiomart Data Import Finished")
-			
+
+	def _parse_attached_file(self):
+		"""Parse attached file into in-memory child tables for processing.
+		Runs inside the background job — data is never persisted to DB."""
+		if self.ecommerce_mapping == "Amazon":
+			if self.amazon_type == "MTR B2B":
+				self.show_preview()
+			elif self.amazon_type == "MTR B2C":
+				self.append_mtr_b2c()
+			elif self.amazon_type == "Stock Transfer":
+				self.append_stock_transfer_attachment()
+		elif self.ecommerce_mapping == "Flipkart":
+			self.append_flipkart()
+		elif self.ecommerce_mapping == "Jiomart":
+			self.append_jio_mart()
+
+	def _update_import_status(self):
+		"""Persist only status and error fields to DB without saving child tables."""
+		frappe.db.set_value("Ecommerce Bill Import", self.name, {
+			"status": self.status,
+			"error_json": getattr(self, "error_json", ""),
+			"error_html": getattr(self, "error_html", ""),
+		})
 
 	def show_preview(self):
 		self.mtr_b2b=[]
@@ -1419,7 +1430,7 @@ class EcommerceBillImport(Document):
 			frappe.msgprint(f"All {success_count} items processed successfully!", indicator="green")
 
 		self.error_json = str(json.dumps(errors))
-		self.save()
+		self._update_import_status()
 
 		# 🔹 Final realtime update
 		self._publish_progress(
@@ -1917,7 +1928,7 @@ class EcommerceBillImport(Document):
 			frappe.msgprint(f"All {success_count} items processed successfully!", indicator="green")
 
 		self.error_json = str(json.dumps(errors))
-		self.save()
+		self._update_import_status()
 
 		# ---- 🔹 Final 100% Update ----
 		self._publish_progress(
@@ -2185,7 +2196,7 @@ class EcommerceBillImport(Document):
 		# -------- Final status update --------
 		self.error_json = json.dumps(errors) if errors else ""
 		self.status = "Partial Success" if errors and success_count else "Error" if errors else "Success"
-		self.save()
+		self._update_import_status()
 
 		# 🔹 Final realtime update
 		self._publish_progress(
@@ -2751,7 +2762,7 @@ class EcommerceBillImport(Document):
 		else:
 			self.status = "Partial Success"
 
-		self.save(ignore_permissions=True)
+		self._update_import_status()
 
 		# 🔹 Final progress update
 		self._publish_progress(
@@ -3292,7 +3303,7 @@ class EcommerceBillImport(Document):
 		else:
 			self.status = "Success"
 
-		self.save(ignore_permissions=True)
+		self._update_import_status()
 
 		self._publish_progress(
 			current=total_invoices,
@@ -3821,7 +3832,7 @@ class EcommerceBillImport(Document):
 		else:
 			self.status = "Error"
 
-		self.save(ignore_permissions=True)
+		self._update_import_status()
 
 		return {
 			"status": "partial" if errors else "success",

@@ -9,7 +9,7 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 		// Add import button if file is uploaded
 			frm.add_custom_button(__("Start Import"), function() {
 				frappe.call({
-					method: "frappe.client.run_doc_method",
+					method: "frappe.handler.run_doc_method",
 					args: {
 						dt: frm.doc.doctype,
 						dn: frm.doc.name,
