@@ -9,7 +9,6 @@ from frappe import _
 from frappe.auth import today
 from frappe.model.document import Document
 from frappe.core.doctype.data_import.importer import Importer
-import pandas as pd
 import io
 import json
 from datetime import datetime, timedelta
