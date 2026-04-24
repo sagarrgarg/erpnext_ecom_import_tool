@@ -54,9 +54,10 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 0);
 				frm.set_df_property("flipkart_items", "hidden", 0);
+				frm.set_df_property("flipkart_cashback", "hidden", 0);
 				frm.set_df_property("jio_mart_attach", "hidden", 1);
 				frm.set_df_property("jio_mart_items", "hidden", 1);
-				
+
 			}
 			else if(value.platform=="Jiomart"){
 				frm.set_df_property("cred_attach", "hidden", 1);

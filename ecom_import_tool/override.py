@@ -1,7 +1,3 @@
-
-
-
-
 from erpnext.accounts.doctype.purchase_invoice.purchase_invoice import PurchaseInvoice
 from erpnext.accounts.doctype.sales_invoice.sales_invoice import SalesInvoice
 from erpnext.stock.doctype.delivery_note.delivery_note import DeliveryNote
@@ -9,29 +5,24 @@ from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseRece
 
 
 class CustomSalesInvoice(SalesInvoice):
-    def before_insert(self):
-        if self.custom_ecommerce_invoice_id:
-            self.name=self.custom_ecommerce_invoice_id
-
-
-
-
+	def before_insert(self):
+		if getattr(self, '_ecom_name', None):
+			self.name = self._ecom_name
 
 
 class CustomDeliveryNote(DeliveryNote):
-    def before_insert(self):
-        if self.custom_inv_no:
-            self.name=self.custom_inv_no
-
+	def before_insert(self):
+		if getattr(self, '_ecom_name', None):
+			self.name = self._ecom_name
 
 
 class CustomPurchaseReceipt(PurchaseReceipt):
-    def before_insert(self):
-        if self.custom_inv_no:
-            self.name=self.custom_inv_no
+	def before_insert(self):
+		if getattr(self, '_ecom_name', None):
+			self.name = self._ecom_name
 
 
 class CustomPurchaseInvoice(PurchaseInvoice):
-    def before_insert(self):
-        if self.custom_inv_no:
-            self.name=self.custom_inv_no
+	def before_insert(self):
+		if getattr(self, '_ecom_name', None):
+			self.name = self._ecom_name

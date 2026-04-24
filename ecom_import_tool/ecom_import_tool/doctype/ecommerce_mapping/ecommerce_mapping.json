@@ -25,7 +25,8 @@
   "section_break_oiko",
   "ecommerce_warehouse_mapping",
   "additional_settings_tab",
-  "ecommerce_gstin_mapping"
+  "ecommerce_gstin_mapping",
+  "cashback_offer_item"
  ],
  "fields": [
   {
@@ -135,6 +136,13 @@
   {
    "fieldname": "section_break_oiko",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "cashback_offer_item",
+   "fieldtype": "Link",
+   "label": "Cashback Offer Item",
+   "options": "Item",
+   "description": "Item used for cashback (Bank Offer) invoices"
   }
  ],
  "grid_page_length": 50,

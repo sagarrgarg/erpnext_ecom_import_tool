@@ -15,8 +15,21 @@ import json
 from datetime import datetime, timedelta
 
 from frappe.utils.data import get_time
-from frappe.utils.file_manager import get_file_path
 from frappe.utils import flt, getdate
+import os
+
+
+def resolve_file_path(file_url):
+	if not file_url:
+		frappe.throw("No file attached.")
+	filename = file_url.split("/files/")[-1]
+	if "/private/files/" in file_url:
+		path = frappe.get_site_path("private", "files", filename)
+	else:
+		path = frappe.get_site_path("public", "files", filename)
+	if not os.path.exists(path):
+		frappe.throw(f"File not found: {path}")
+	return path
 
 def normalize_state_key(state):
     if not state:
@@ -427,9 +440,7 @@ class EcommerceBillImport(Document):
 			def clean(val):
 				return clean_csv_cell(val)
 
-			csv_file_url = self.mtr_b2b_attachment
-			filename = csv_file_url.split('/files/')[-1]
-			csv_file_path = get_file_path(filename)
+			csv_file_path = resolve_file_path(self.mtr_b2b_attachment)
 
 			try:
 				df = pd.read_csv(
@@ -549,9 +560,7 @@ class EcommerceBillImport(Document):
 			def clean(val):
 				return clean_csv_cell(val)
 
-			csv_file_url = self.mtr_b2c_attachment
-			filename = csv_file_url.split('/files/')[-1]
-			csv_file_path = get_file_path(filename)
+			csv_file_path = resolve_file_path(self.mtr_b2c_attachment)
 
 			try:
 				df = pd.read_csv(
@@ -592,9 +601,7 @@ class EcommerceBillImport(Document):
 				return clean_csv_cell(val)
 
 			
-			csv_file_url = self.stock_transfer_attachment
-			filename = csv_file_url.split('/files/')[-1]
-			csv_file_path = get_file_path(filename)
+			csv_file_path = resolve_file_path(self.stock_transfer_attachment)
 
 			try:
 				df = pd.read_csv(
@@ -639,16 +646,9 @@ class EcommerceBillImport(Document):
 		if not self.cred_attach:
 			return
 
-		import os
 		import pandas as pd
-		from frappe.utils.file_manager import get_file_path
 
-		file_url = self.cred_attach
-		filename = file_url.split("/files/")[-1]
-		file_path = get_file_path(filename)
-
-		if not os.path.exists(file_path):
-			frappe.throw(f"File not found at path: {file_path}")
+		file_path = resolve_file_path(self.cred_attach)
 
 		def clean(val):
 			"""Normalize cell values to string."""
@@ -792,8 +792,6 @@ class EcommerceBillImport(Document):
 
 	def append_flipkart(self):
 		import pandas as pd
-		import frappe
-		from frappe.utils.file_manager import get_file_path
 
 		def clean(val):
 			"""Normalize CSV cell values.
@@ -816,28 +814,12 @@ class EcommerceBillImport(Document):
 				val = val[:-2]
 			return val
 
-		# Check if file attached
-		if not self.flipkart_attach:
-			frappe.throw("Please attach a Flipkart CSV file before importing.")
+		file_path = resolve_file_path(self.flipkart_attach)
 
-		# Get full path
 		try:
-			filename = self.flipkart_attach.split("/files/")[-1]
-			file_path = get_file_path(filename)
+			df = pd.read_excel(file_path, sheet_name="Sales Report", dtype=str)
 		except Exception as e:
-			frappe.throw(f"Unable to find or access the file: {str(e)}")
-
-		# Load CSV
-		try:
-			# Read everything as string to preserve long IDs exactly (avoid scientific notation)
-			df = pd.read_csv(
-				file_path,
-				dtype=str,
-				keep_default_na=False,
-				na_filter=False,
-			)
-		except Exception as e:
-			frappe.throw(f"Failed to read CSV file: {str(e)}")
+			frappe.throw(f"Failed to read Flipkart XLSX: {str(e)}")
 
 		# Reset child table
 		self.set("flipkart_items", [])
@@ -867,6 +849,25 @@ class EcommerceBillImport(Document):
 			child.set("customers_delivery_state", clean(row.get("Customer's Delivery State", "")))
 			child.set("is_shopsy_order", clean(row.get("Is Shopsy Order?", "")))
 
+		self.set("flipkart_cashback", [])
+		try:
+			cb_df = pd.read_excel(file_path, sheet_name="Cash Back Report", dtype=str)
+		except (ValueError, KeyError):
+			cb_df = pd.DataFrame()
+
+		if not cb_df.empty:
+			cb_fields = [d.fieldname for d in frappe.get_meta("Flipkart Transaction Items").fields]
+			for _, row in cb_df.iterrows():
+				child = self.append("flipkart_cashback", {})
+				for column in cb_df.columns:
+					fieldname = column.strip().lower().replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_").replace("?", "").replace("'", "")
+					if fieldname in cb_fields:
+						child.set(fieldname, clean(row[column]))
+				child.set("credit_note_id_debit_note_id", clean(row.get("Credit Note ID/ Debit Note ID", "")))
+				child.set("sgst_rate_or_utgst_as_applicable", clean(row.get("SGST Rate (or UTGST as applicable)", "")))
+				child.set("sgst_amount_or_utgst_as_applicable", clean(row.get("SGST Amount (Or UTGST as applicable)", "")))
+				child.set("customers_delivery_state", clean(row.get("Customer's Delivery State", "")))
+				child.set("is_shopsy_order", clean(row.get("Is Shopsy Order?", "")))
 
 	
 
@@ -879,9 +880,7 @@ class EcommerceBillImport(Document):
 			def clean(val):
 				return clean_csv_cell(val)
 
-			csv_file_url = self.jio_mart_attach
-			filename = csv_file_url.split('/files/')[-1]
-			csv_file_path = get_file_path(filename)
+			csv_file_path = resolve_file_path(self.jio_mart_attach)
 
 			try:
 				df = pd.read_csv(
@@ -890,8 +889,6 @@ class EcommerceBillImport(Document):
 					keep_default_na=False,
 					na_filter=False,
 				)
-			except FileNotFoundError:
-				frappe.throw(f"File not found: {csv_file_path}")
 			except Exception as e:
 				frappe.throw(f"Error reading CSV: {str(e)}")
 
@@ -1003,8 +1000,8 @@ class EcommerceBillImport(Document):
 				if not customer:
 					customer=frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "default_non_company_customer")
 
-				existing_si_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 0, "is_return": 0}, "name")
-				existing_si = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 1, "is_return": 0}, "name")
+				existing_si_draft = frappe.db.get_value("Sales Invoice", {"name": invoice_no, "docstatus": 0, "is_return": 0}, "name")
+				existing_si = frappe.db.get_value("Sales Invoice", {"name": invoice_no, "docstatus": 1, "is_return": 0}, "name")
 
 				amazon = frappe.get_doc("Ecommerce Mapping", {"platform": "Amazon"})
 				error_log=[]
@@ -1040,12 +1037,8 @@ class EcommerceBillImport(Document):
 								raise Exception(f"Invalid Invoice Date: {items_data[0][1].get('invoice_date')}")
 							si.posting_date = invoice_dt.date()
 							si.posting_time = invoice_dt.time()
-							si.custom_inv_no = invoice_no
-							si.custom_ecommerce_invoice_id=invoice_no
-							# Avoid duplicate primary key errors if an invoice with this name already exists
-							existing_by_name = frappe.db.exists("Sales Invoice", invoice_no)
-							if not existing_by_name:
-								si.__newname = invoice_no
+							if not frappe.db.exists("Sales Invoice", invoice_no):
+								si._ecom_name = invoice_no
 							si.custom_ecommerce_operator=self.ecommerce_mapping
 							si.custom_ecommerce_type=self.amazon_type
 							si.taxes = []
@@ -1170,7 +1163,7 @@ class EcommerceBillImport(Document):
 
 				if refund_items and existing_si_draft and not existing_si and not warehouse_mapping_missing:
 					draft_si = frappe.get_doc("Sales Invoice", existing_si_draft)
-					if draft_si.custom_inv_no not in error_log:
+					if draft_si.name not in error_log:
 						draft_si.submit()
 						frappe.db.commit()
 						existing_si = draft_si.name
@@ -1198,7 +1191,7 @@ class EcommerceBillImport(Document):
 						# Skip if this credit note already exists (idempotent re-runs)
 						existing_return = frappe.db.get_value(
 							"Sales Invoice",
-							{"custom_ecommerce_invoice_id": credit_note_no, "docstatus": 1},
+							{"name": credit_note_no, "docstatus": 1},
 							"name",
 						)
 						if existing_return:
@@ -1226,7 +1219,7 @@ class EcommerceBillImport(Document):
 
 						draft_return = frappe.db.get_value(
 							"Sales Invoice",
-							{"custom_ecommerce_invoice_id": credit_note_no, "docstatus": 0},
+							{"name": credit_note_no, "docstatus": 0},
 							"name",
 						)
 
@@ -1251,11 +1244,8 @@ class EcommerceBillImport(Document):
 								)
 							si_return.posting_date = credit_note_dt.date()
 							si_return.posting_time = credit_note_dt.time()
-							si_return.custom_ecommerce_invoice_id = credit_note_no
-							existing_by_name = frappe.db.exists("Sales Invoice", credit_note_no)
-							if not existing_by_name:
-								si_return.__newname = credit_note_no
-							si_return.custom_inv_no = invoice_no
+							if not frappe.db.exists("Sales Invoice", credit_note_no):
+								si_return._ecom_name = credit_note_no
 							si_return.taxes = []
 
 							if use_debit_note:
@@ -1266,6 +1256,8 @@ class EcommerceBillImport(Document):
 								si_return.is_return = 1
 								si_return.is_debit_note = 0
 								si_return.update_stock = 1
+								if existing_si:
+									si_return.return_against = existing_si
 
 						si_return.ecommerce_gstin = mapped_ecommerce_gstin
 
@@ -1482,8 +1474,8 @@ class EcommerceBillImport(Document):
 				shipment_items = [x for x in items_data if x[1].get("transaction_type") not in ["Refund", "Cancel"]]
 				refund_items = [x for x in items_data if x[1].get("transaction_type") == "Refund"]
 
-				existing_si_draft = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 0}, "name")
-				existing_si = frappe.db.get_value("Sales Invoice", {"custom_inv_no": invoice_no, "docstatus": 1}, "name")
+				existing_si_draft = frappe.db.get_value("Sales Invoice", {"name": invoice_no, "docstatus": 0}, "name")
+				existing_si = frappe.db.get_value("Sales Invoice", {"name": invoice_no, "docstatus": 1}, "name")
 				amazon = frappe.get_doc("Ecommerce Mapping", {"platform": "Amazon"})
 				warehouse_mapping_missing = False
 				# If the sales invoice is already submitted, don't recreate it. Refunds (credit notes)
@@ -1517,12 +1509,8 @@ class EcommerceBillImport(Document):
 							raise Exception(f"Invalid Invoice Date: {items_data[0][1].get('invoice_date')}")
 						si.posting_date = invoice_dt.date()
 						si.posting_time = invoice_dt.time()
-						si.custom_inv_no = invoice_no
-						si.custom_ecommerce_invoice_id = invoice_no
-						# Avoid duplicate primary key errors if an invoice with this name already exists
-						existing_by_name = frappe.db.exists("Sales Invoice", invoice_no)
-						if not existing_by_name:
-							si.__newname = invoice_no
+						if not frappe.db.exists("Sales Invoice", invoice_no):
+							si._ecom_name = invoice_no
 						si.custom_ecommerce_operator = self.ecommerce_mapping
 						si.custom_ecommerce_type = self.amazon_type
 						si.taxes_and_charges = ""
@@ -1695,7 +1683,7 @@ class EcommerceBillImport(Document):
 						# Skip if this credit note already exists (idempotent re-runs)
 						existing_return = frappe.db.get_value(
 							"Sales Invoice",
-							{"custom_ecommerce_invoice_id": credit_note_no, "docstatus": 1},
+							{"name": credit_note_no, "docstatus": 1},
 							"name",
 						)
 						if existing_return:
@@ -1723,7 +1711,7 @@ class EcommerceBillImport(Document):
 
 						draft_return = frappe.db.get_value(
 							"Sales Invoice",
-							{"custom_ecommerce_invoice_id": credit_note_no, "docstatus": 0},
+							{"name": credit_note_no, "docstatus": 0},
 							"name",
 						)
 
@@ -1751,11 +1739,8 @@ class EcommerceBillImport(Document):
 							si_return.posting_time = credit_note_dt.time()
 							si_return.custom_ecommerce_operator = self.ecommerce_mapping
 							si_return.custom_ecommerce_type = self.amazon_type
-							si_return.custom_inv_no = invoice_no
-							si_return.custom_ecommerce_invoice_id = credit_note_no
-							existing_by_name = frappe.db.exists("Sales Invoice", credit_note_no)
-							if not existing_by_name:
-								si_return.__newname = credit_note_no
+							if not frappe.db.exists("Sales Invoice", credit_note_no):
+								si_return._ecom_name = credit_note_no
 							si_return.taxes = []
 
 							if use_debit_note:
@@ -1766,6 +1751,8 @@ class EcommerceBillImport(Document):
 								si_return.is_return = 1
 								si_return.is_debit_note = 0
 								si_return.update_stock = 1
+								if existing_si:
+									si_return.return_against = existing_si
 
 						# Always set ecommerce_gstin from mapping (required for GST reporting)
 						si_return.ecommerce_gstin = mapped_ecommerce_gstin
@@ -1985,13 +1972,13 @@ class EcommerceBillImport(Document):
 				doctype_m = "Purchase Invoice" if is_taxable else "Purchase Receipt"
 
 				existing_name = frappe.db.get_value(doctype, {
-					"custom_inv_no": invoice_no,
+					"name": invoice_no,
 					"is_return": 0,
 					"docstatus": ["!=", 2]
 				}, "name")
 
 				existing_name_purchase = frappe.db.get_value(doctype_m, {
-					"custom_inv_no": invoice_no,
+					"name": invoice_no,
 					"is_return": 0,
 					"docstatus": ["!=", 2]
 				}, "name")
@@ -2018,13 +2005,12 @@ class EcommerceBillImport(Document):
 						raise Exception(f"Invalid Invoice Date: {group_rows[0][1].get('invoice_date')}")
 					doc.posting_date = invoice_dt.date()
 					doc.posting_time = invoice_dt.time()
-					doc.custom_inv_no = invoice_no
 					doc.custom_ecommerce_operator = self.ecommerce_mapping
 					doc.custom_ecommerce_type = self.amazon_type
 					doc.taxes = [] if is_taxable else None
 					doc.update_stock = 1 if is_taxable else None
 					doc.set_warehouse = "" if not is_taxable else None
-					doc.__newname = invoice_no
+					doc._ecom_name = invoice_no
 					doc.items = []
 
 					for idx, row in group_rows:
@@ -2059,7 +2045,6 @@ class EcommerceBillImport(Document):
 						})
 
 						if is_taxable:
-							doc.custom_ecommerce_invoice_id = invoice_no
 							for tax_type, rate, amount, acc_head in [
 								("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
 								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), flt(row.sgst_amount) + flt(row.utgst_amount), "Output Tax SGST - KGOPL"),
@@ -2104,11 +2089,10 @@ class EcommerceBillImport(Document):
 						raise Exception(f"Invalid Invoice Date: {group_rows[0][1].get('invoice_date')}")
 					pi_doc.posting_date = invoice_dt.date()
 					pi_doc.posting_time = invoice_dt.time()
-					pi_doc.custom_inv_no = invoice_no
 					pi_doc.customer = customer
 					pi_doc.custom_ecommerce_operator = self.ecommerce_mapping
 					pi_doc.custom_ecommerce_type = self.amazon_type
-					pi_doc.__newname = invoice_no
+					pi_doc._ecom_name = invoice_no
 					if is_taxable:
 						pi_doc.bill_no = invoice_no
 					warehouse = None
@@ -2151,7 +2135,6 @@ class EcommerceBillImport(Document):
 						})
 
 						if is_taxable:
-							pi_doc.custom_ecommerce_invoice_id = invoice_no
 							for tax_type, rate, amount, acc_head in [
 								("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Input Tax CGST - KGOPL"),
 								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), flt(row.sgst_amount) + flt(row.utgst_amount), "Input Tax SGST - KGOPL"),
@@ -2233,6 +2216,12 @@ class EcommerceBillImport(Document):
 		customer = frappe.db.get_value("Ecommerce Mapping", {"platform": "Flipkart"}, "default_non_company_customer")
 		flipkart = frappe.get_doc("Ecommerce Mapping", "Flipkart")
 
+		# Build cashback lookup by (order_item_id, document_sub_type) for merging into sales items
+		cashback_by_item = {}
+		for cb_row in (self.flipkart_cashback or []):
+			if cb_row.order_item_id and cb_row.document_sub_type:
+				cashback_by_item[(cb_row.order_item_id, cb_row.document_sub_type)] = cb_row
+
 		def get_item_code(ecom_sku):
 			for jk in flipkart.ecom_item_table:
 				if jk.ecom_item_id == ecom_sku:
@@ -2295,7 +2284,7 @@ class EcommerceBillImport(Document):
 
 			try:
 				existing = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": invoice_key,
+					"name": invoice_key,
 					"is_return": 0,
 					"docstatus": 1
 				}, "name")
@@ -2313,7 +2302,7 @@ class EcommerceBillImport(Document):
 					continue
 
 				draft_name = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": invoice_key,
+					"name": invoice_key,
 					"is_return": 0,
 					"docstatus": 0
 				}, "name")
@@ -2331,7 +2320,6 @@ class EcommerceBillImport(Document):
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
-					si.custom_inv_no = invoice_key
 					si.custom_ecommerce_operator = self.ecommerce_mapping
 					si.custom_ecommerce_type = self.amazon_type
 					si.taxes_and_charges = ""
@@ -2346,11 +2334,8 @@ class EcommerceBillImport(Document):
 					si.company_address = company_address
 					si.ecommerce_gstin = ecommerce_gstin
 					si.location = location
-					si.custom_ecommerce_invoice_id = first.buyer_invoice_id
-					# Don't set __newname if invoice with that name already exists
-					existing_by_name = frappe.db.exists("Sales Invoice", first.buyer_invoice_id)
-					if not existing_by_name:
-						si.__newname = first.buyer_invoice_id
+					if not frappe.db.exists("Sales Invoice", first.buyer_invoice_id):
+						si._ecom_name = first.buyer_invoice_id
 
 				existing_item_ids = {
 					d.get("custom_ecom_item_id")
@@ -2387,18 +2372,29 @@ class EcommerceBillImport(Document):
 							if not state_code_dict.get(str(state).lower()):
 								raise Exception("State name Is Wrong Please Check")
 							si.place_of_supply = state_code_dict.get(str(state).lower())
-						if not si.custom_ecommerce_invoice_id and row.buyer_invoice_id:
-							si.custom_ecommerce_invoice_id = row.buyer_invoice_id
-							# Don't set __newname if invoice with that name already exists
+						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
+							# Don't set _ecom_name if invoice with that name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", row.buyer_invoice_id)
 							if not existing_by_name:
-								si.__newname = row.buyer_invoice_id
+								si._ecom_name = row.buyer_invoice_id
 
 						item_name = frappe.db.get_value("Item", item_code, "item_name")
 						hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code")
 
 						qty = flt(row.item_quantity)
-						rate = (flt(row.taxable_value) / qty) if qty else 0
+						taxable = flt(row.taxable_value)
+						cgst_amt = flt(row.cgst_amount)
+						sgst_amt = flt(row.sgst_amount)
+						igst_amt = flt(row.igst_amount)
+
+						cb = cashback_by_item.get((row.order_item_id, "Sale"))
+						if cb:
+							taxable += flt(cb.taxable_value)
+							cgst_amt += flt(cb.cgst_amount)
+							sgst_amt += flt(cb.sgst_amount_or_utgst_as_applicable)
+							igst_amt += flt(cb.igst_amount)
+
+						rate = (taxable / qty) if qty else 0
 
 						item_row = {
 							"item_code": item_code,
@@ -2418,9 +2414,9 @@ class EcommerceBillImport(Document):
 						items_appended += 1
 
 						for tax_type, tax_rate, amount, acc_head in [
-							("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
-							("SGST", flt(row.sgst_rate), flt(row.sgst_amount), "Output Tax SGST - KGOPL"),
-							("IGST", flt(row.igst_rate), flt(row.igst_amount), "Output Tax IGST - KGOPL")
+							("CGST", flt(row.cgst_rate), cgst_amt, "Output Tax CGST - KGOPL"),
+							("SGST", flt(row.sgst_rate), sgst_amt, "Output Tax SGST - KGOPL"),
+							("IGST", flt(row.igst_rate), igst_amt, "Output Tax IGST - KGOPL")
 						]:
 							if amount:
 								existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
@@ -2444,6 +2440,9 @@ class EcommerceBillImport(Document):
 						})
 
 				if items_appended > 0 and not group_errors:
+					order_ids = set(r.order_id for r in rows if r.order_id)
+					if order_ids:
+						si.ecom_order_id = ", ".join(sorted(order_ids))
 					si.save(ignore_permissions=True)
 					for j in si.items:
 						j.item_tax_template = ""
@@ -2531,7 +2530,7 @@ class EcommerceBillImport(Document):
 
 			try:
 				existing_return = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": invoice_key,
+					"name": invoice_key,
 					"is_return": 1,
 					"docstatus": 1
 				}, "name")
@@ -2549,7 +2548,7 @@ class EcommerceBillImport(Document):
 					continue
 
 				draft_name = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": invoice_key,
+					"name": invoice_key,
 					"is_return": 1,
 					"docstatus": 0
 				}, "name")
@@ -2568,7 +2567,6 @@ class EcommerceBillImport(Document):
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
-					si.custom_inv_no = invoice_key
 					si.custom_ecommerce_operator = self.ecommerce_mapping
 					si.custom_ecommerce_type = self.amazon_type
 					si.taxes_and_charges = ""
@@ -2582,11 +2580,8 @@ class EcommerceBillImport(Document):
 					si.ecommerce_gstin = ecommerce_gstin
 					si.location = location
 					si.is_return = 1
-					si.custom_ecommerce_invoice_id = first.buyer_invoice_id
-					# Don't set __newname if invoice with that name already exists
-					existing_by_name = frappe.db.exists("Sales Invoice", first.buyer_invoice_id)
-					if not existing_by_name:
-						si.__newname = first.buyer_invoice_id
+					if not frappe.db.exists("Sales Invoice", first.buyer_invoice_id):
+						si._ecom_name = first.buyer_invoice_id
 
 				existing_item_ids = {
 					d.get("custom_ecom_item_id")
@@ -2622,24 +2617,37 @@ class EcommerceBillImport(Document):
 							if not state_code_dict.get(str(state).lower()):
 								raise Exception("State name Is Wrong Please Check")
 							si.place_of_supply = state_code_dict.get(str(state).lower())
-						if not si.custom_ecommerce_invoice_id and row.buyer_invoice_id:
-							si.custom_ecommerce_invoice_id = row.buyer_invoice_id
-							# Don't set __newname if invoice with that name already exists
+						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
+							# Don't set _ecom_name if invoice with that name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", row.buyer_invoice_id)
 							if not existing_by_name:
-								si.__newname = row.buyer_invoice_id
+								si._ecom_name = row.buyer_invoice_id
 
 						item_name = frappe.db.get_value("Item", item_code, "item_name")
 						hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code")
 
 						qty_abs = abs(flt(row.item_quantity))
+						taxable = abs(flt(row.taxable_value))
+						cgst_amt = flt(row.cgst_amount)
+						sgst_amt = flt(row.sgst_amount)
+						igst_amt = flt(row.igst_amount)
+
+						cb = cashback_by_item.get((row.order_item_id, "Return"))
+						if cb:
+							taxable += abs(flt(cb.taxable_value))
+							cgst_amt += flt(cb.cgst_amount)
+							sgst_amt += flt(cb.sgst_amount_or_utgst_as_applicable)
+							igst_amt += flt(cb.igst_amount)
+
+						rate = taxable / qty_abs if qty_abs else 0
+
 						item_row = {
 							"item_code": item_code,
 							"item_name": item_name,
 							"gst_hsn_code": hsn_code,
 							"qty": -qty_abs,
-							"rate": abs(flt(row.taxable_value)) / qty_abs if qty_abs else 0,
-							"price_list_rate": abs(flt(row.taxable_value)) / qty_abs if qty_abs else 0,
+							"rate": rate,
+							"price_list_rate": rate,
 							"description": row.product_titledescription,
 							"warehouse": warehouse,
 							"custom_ecom_item_id": row.order_item_id
@@ -2650,9 +2658,9 @@ class EcommerceBillImport(Document):
 						items_appended += 1
 
 						for tax_type, tax_rate, amount, acc_head in [
-							("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
-							("SGST", flt(row.sgst_rate), flt(row.sgst_amount), "Output Tax SGST - KGOPL"),
-							("IGST", flt(row.igst_rate), flt(row.igst_amount), "Output Tax IGST - KGOPL")
+							("CGST", flt(row.cgst_rate), cgst_amt, "Output Tax CGST - KGOPL"),
+							("SGST", flt(row.sgst_rate), sgst_amt, "Output Tax SGST - KGOPL"),
+							("IGST", flt(row.igst_rate), igst_amt, "Output Tax IGST - KGOPL")
 						]:
 							if amount:
 								existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
@@ -2676,6 +2684,9 @@ class EcommerceBillImport(Document):
 						})
 
 				if items_appended > 0 and not group_errors:
+					order_ids = set(r.order_id for r in rows if r.order_id)
+					if order_ids:
+						si.ecom_order_id = ", ".join(sorted(order_ids))
 					si.save(ignore_permissions=True)
 					for j in si.items:
 						j.item_tax_template = ""
@@ -2768,6 +2779,134 @@ class EcommerceBillImport(Document):
 
 
 		
+	def create_flipkart_cashback_invoices(self):
+		if not self.flipkart_cashback:
+			return
+
+		flipkart = frappe.get_doc("Ecommerce Mapping", {"platform": "Flipkart"})
+		if not flipkart.cashback_offer_item:
+			frappe.msgprint("Cashback Offer Item not set in Flipkart Ecommerce Mapping. Skipping cashback import.")
+			return
+
+		customer = flipkart.default_non_company_customer
+		cashback_item = flipkart.cashback_offer_item
+		item_name = frappe.db.get_value("Item", cashback_item, "item_name")
+		hsn_code = frappe.db.get_value("Item", cashback_item, "gst_hsn_code")
+
+		errors = []
+		success_count = 0
+		total_rows = len(self.flipkart_cashback)
+
+		for count, row in enumerate(self.flipkart_cashback, start=1):
+			cb_name = row.credit_note_id_debit_note_id or ""
+			try:
+				if not cb_name:
+					errors.append({"invoice_id": f"row-{count}", "message": "Missing Credit/Debit Note ID"})
+					continue
+
+				is_credit = row.document_type == "Credit Note"
+
+				existing = frappe.db.get_value("Sales Invoice", {"name": cb_name, "docstatus": 1}, "name")
+				if existing:
+					success_count += 1
+					continue
+
+				seller_gstin = row.seller_gstin or ""
+				ecommerce_gstin = resolve_ecommerce_gstin_from_mapping(flipkart, seller_gstin)
+				if not ecommerce_gstin:
+					errors.append({"invoice_id": cb_name, "message": f"GSTIN mapping missing for {seller_gstin}"})
+					continue
+
+				inv_date = str(row.invoice_date or "").split(" ")[0]
+				posting_date = parse_export_date(inv_date) or getdate(inv_date)
+
+				draft_name = frappe.db.get_value("Sales Invoice", {"name": cb_name, "docstatus": 0}, "name")
+				if draft_name:
+					si = frappe.get_doc("Sales Invoice", draft_name)
+				else:
+					si = frappe.new_doc("Sales Invoice")
+					si.customer = customer
+					si.set_posting_time = 1
+					si.posting_date = posting_date
+					si.custom_ecommerce_operator = self.ecommerce_mapping
+					si.ecommerce_gstin = ecommerce_gstin
+					si.update_stock = 0
+					si.taxes_and_charges = ""
+					if not frappe.db.exists("Sales Invoice", cb_name):
+						si._ecom_name = cb_name
+					if is_credit:
+						si.is_return = 1
+
+				if row.order_id:
+					si.ecom_order_id = row.order_id
+
+				state = row.customers_delivery_state or ""
+				if state:
+					state_key = normalize_state_key(state)
+					if state_code_dict.get(state_key):
+						si.place_of_supply = state_code_dict.get(state_key)
+
+				qty = -1 if is_credit else 1
+				rate = abs(flt(row.taxable_value))
+
+				si.items = []
+				si.taxes = []
+
+				si.append("items", {
+					"item_code": cashback_item,
+					"item_name": item_name,
+					"gst_hsn_code": hsn_code,
+					"qty": qty,
+					"rate": rate,
+					"income_account": flipkart.income_account,
+				})
+
+				for tax_type, tax_rate, tax_amount, acc_head in [
+					("IGST", flt(row.igst_rate), abs(flt(row.igst_amount)), "Output Tax IGST - KGOPL"),
+					("CGST", flt(row.cgst_rate), abs(flt(row.cgst_amount)), "Output Tax CGST - KGOPL"),
+					("SGST", flt(row.sgst_rate_or_utgst_as_applicable), abs(flt(row.sgst_amount_or_utgst_as_applicable)), "Output Tax SGST - KGOPL"),
+				]:
+					if tax_amount:
+						si.append("taxes", {
+							"charge_type": "On Net Total",
+							"account_head": acc_head,
+							"rate": normalize_tax_rate(tax_rate),
+							"tax_amount": -tax_amount if is_credit else tax_amount,
+							"description": tax_type,
+						})
+
+				si.remarks = f"Flipkart Cashback {row.document_type}: {cb_name} ({row.document_sub_type or ''})"
+
+				si.save(ignore_permissions=True)
+				for j in si.items:
+					j.item_tax_template = ""
+					j.item_tax_rate = frappe._dict()
+				si.due_date = getdate(today())
+				si.save(ignore_permissions=True)
+				si.submit()
+				frappe.db.commit()
+				success_count += 1
+
+				self._publish_progress(
+					current=count,
+					total=total_rows,
+					progress=int((count / total_rows) * 100),
+					message=f"Cashback: {count}/{total_rows} processed",
+					phase="flipkart_cashback",
+				)
+
+			except Exception as e:
+				frappe.db.rollback()
+				errors.append({"invoice_id": cb_name or f"row-{count}", "message": str(e)})
+				frappe.log_error(f"Flipkart cashback error: {e}")
+
+		if errors:
+			frappe.msgprint(f"Cashback import: {success_count} created, {len(errors)} errors")
+			for err in errors[:10]:
+				frappe.msgprint(f"  {err['invoice_id']}: {err['message']}")
+		else:
+			frappe.msgprint(f"Cashback import: {success_count} invoices created")
+
 	def create_cred_sales_invoice(self):
 		"""Create Sales Invoices from the CRED CSV export.
 
@@ -2781,22 +2920,12 @@ class EcommerceBillImport(Document):
 		We parse the CSV inside the background job (RQ worker) to avoid bloating the parent
 		document with hidden child tables.
 		"""
-		import os
 		import re
 		import pandas as pd
-		from frappe.utils.file_manager import get_file_path
 
 		errors = []
 
-		if not self.cred_attach:
-			frappe.throw("Please attach the CRED CSV file.")
-
-		file_url = self.cred_attach
-		filename = file_url.split("/files/")[-1]
-		file_path = get_file_path(filename)
-
-		if not os.path.exists(file_path):
-			frappe.throw(f"File not found at path: {file_path}")
+		file_path = resolve_file_path(self.cred_attach)
 
 		# --- Load mapping and customer ---
 		cred_mapping = frappe.get_doc("Ecommerce Mapping", {"name": "Cred"})
@@ -2917,7 +3046,7 @@ class EcommerceBillImport(Document):
 				# Skip if already submitted
 				existing_submitted = frappe.db.get_value(
 					"Sales Invoice",
-					{"custom_inv_no": invoice_no, "is_return": 0, "docstatus": 1},
+					{"name": invoice_no, "is_return": 0, "docstatus": 1},
 					"name",
 				)
 				if existing_submitted:
@@ -2935,7 +3064,7 @@ class EcommerceBillImport(Document):
 				# Check for draft to resume
 				draft_name = frappe.db.get_value(
 					"Sales Invoice",
-					{"custom_inv_no": invoice_no, "is_return": 0, "docstatus": 0},
+					{"name": invoice_no, "is_return": 0, "docstatus": 0},
 					"name",
 				)
 
@@ -2989,15 +3118,10 @@ class EcommerceBillImport(Document):
 				si.set_posting_time = 1
 				si.posting_date = invoice_dt.date()
 				si.posting_time = invoice_dt.time()
-				si.custom_inv_no = invoice_no
 				si.custom_ecommerce_operator = self.ecommerce_mapping
-				si.custom_ecommerce_type = ""  # CRED doesn't have sub-types like Amazon
-				si.custom_ecommerce_invoice_id = invoice_no
-
-				# Avoid duplicate primary key errors
-				existing_by_name = frappe.db.exists("Sales Invoice", invoice_no)
-				if not existing_by_name:
-					si.__newname = invoice_no
+				si.custom_ecommerce_type = ""
+				if not frappe.db.exists("Sales Invoice", invoice_no):
+					si._ecom_name = invoice_no
 
 				si.taxes_and_charges = ""
 				si.update_stock = 1
@@ -3270,7 +3394,7 @@ class EcommerceBillImport(Document):
 
 			try:
 				existing = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": invoice_key,
+					"name": invoice_key,
 					"is_return": 0,
 					"docstatus": 1
 				}, "name")
@@ -3288,7 +3412,7 @@ class EcommerceBillImport(Document):
 					continue
 
 				draft_name = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": invoice_key,
+					"name": invoice_key,
 					"is_return": 0,
 					"docstatus": 0
 				}, "name")
@@ -3307,7 +3431,6 @@ class EcommerceBillImport(Document):
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
-					si.custom_inv_no = invoice_key
 					si.custom_ecommerce_operator = self.ecommerce_mapping
 					si.custom_ecommerce_type = self.amazon_type
 					if first.customers_billing_state:
@@ -3318,11 +3441,8 @@ class EcommerceBillImport(Document):
 					si.taxes_and_charges = ""
 					si.update_stock = 1
 					si.company_address = company_address
-					si.custom_ecommerce_invoice_id = first.buyer_invoice_id
-					# Avoid duplicate primary key errors if an invoice with this name already exists
-					existing_by_name = frappe.db.exists("Sales Invoice", first.buyer_invoice_id)
-					if not existing_by_name:
-						si.__newname = first.buyer_invoice_id
+					if not frappe.db.exists("Sales Invoice", first.buyer_invoice_id):
+						si._ecom_name = first.buyer_invoice_id
 					si.ecommerce_gstin = ecommerce_gstin or ""
 					si.location = location
 
@@ -3381,9 +3501,9 @@ class EcommerceBillImport(Document):
 							if not state_code_dict.get(str(state).lower()):
 								raise Exception("State name Is Wrong Please Check")
 							si.place_of_supply = state_code_dict.get(str(state).lower())
-						if not si.custom_ecommerce_invoice_id and row.buyer_invoice_id:
-							si.custom_ecommerce_invoice_id = row.buyer_invoice_id
-							si.__newname = row.buyer_invoice_id
+						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
+							if not frappe.db.exists("Sales Invoice", row.buyer_invoice_id):
+								si._ecom_name = row.buyer_invoice_id
 
 						si.append("items", item_row)
 						existing_item_ids.add(row.order_item_id)
@@ -3416,6 +3536,9 @@ class EcommerceBillImport(Document):
 						})
 
 				if items_appended > 0:
+					order_ids = set(r.order_id for r in rows if r.order_id)
+					if order_ids:
+						si.ecom_order_id = ", ".join(sorted(order_ids))
 					si.save(ignore_permissions=True)
 					for j in si.items:
 						j.item_tax_template = ""
@@ -3496,7 +3619,7 @@ class EcommerceBillImport(Document):
 
 			try:
 				existing_return = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": invoice_key,
+					"name": invoice_key,
 					"is_return": 1,
 					"docstatus": 1
 				}, "name")
@@ -3514,7 +3637,7 @@ class EcommerceBillImport(Document):
 					continue
 
 				draft_name = frappe.db.get_value("Sales Invoice", {
-					"custom_inv_no": invoice_key,
+					"name": invoice_key,
 					"is_return": 1,
 					"docstatus": 0
 				}, "name")
@@ -3534,7 +3657,6 @@ class EcommerceBillImport(Document):
 					si.customer = customer
 					si.set_posting_time = 1
 					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
-					si.custom_inv_no = invoice_key
 					si.custom_ecommerce_operator = self.ecommerce_mapping
 					si.custom_ecommerce_type = self.amazon_type
 					si.taxes_and_charges = ""
@@ -3543,11 +3665,8 @@ class EcommerceBillImport(Document):
 					si.ecommerce_gstin = ecommerce_gstin or ""
 					si.location = location
 					si.is_return = 1
-					si.custom_ecommerce_invoice_id = first.buyer_invoice_id
-					# Avoid duplicate primary key errors if an invoice with this name already exists
-					existing_by_name = frappe.db.exists("Sales Invoice", first.buyer_invoice_id)
-					if not existing_by_name:
-						si.__newname = first.buyer_invoice_id
+					if not frappe.db.exists("Sales Invoice", first.buyer_invoice_id):
+						si._ecom_name = first.buyer_invoice_id
 					if first.customers_billing_state:
 						state = first.customers_billing_state
 						if not state_code_dict.get(str(state).lower()):
@@ -3605,12 +3724,11 @@ class EcommerceBillImport(Document):
 							if not state_code_dict.get(str(state).lower()):
 								raise Exception("State name Is Wrong Please Check")
 							si.place_of_supply = state_code_dict.get(str(state).lower())
-						if not si.custom_ecommerce_invoice_id and row.buyer_invoice_id:
-							si.custom_ecommerce_invoice_id = row.buyer_invoice_id
+						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
 							# Avoid duplicate primary key errors if an invoice with this name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", row.buyer_invoice_id)
 							if not existing_by_name:
-								si.__newname = row.buyer_invoice_id
+								si._ecom_name = row.buyer_invoice_id
 
 						si.append("items", item_row)
 						existing_item_ids.add(row.order_item_id)
@@ -3643,6 +3761,9 @@ class EcommerceBillImport(Document):
 						})
 
 				if items_appended > 0:
+					order_ids = set(r.order_id for r in rows if r.order_id)
+					if order_ids:
+						si.ecom_order_id = ", ".join(sorted(order_ids))
 					si.save(ignore_permissions=True)
 					for j in si.items:
 						j.item_tax_template = ""
