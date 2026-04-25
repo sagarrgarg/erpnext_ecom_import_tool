@@ -330,6 +330,7 @@ state_code_dict = {
     "kerala": "32-Kerala",
     "tamil nadu": "33-Tamil Nadu",
     "puducherry": "34-Puducherry",
+    "pondicherry": "34-Puducherry",
     "andaman and nicobar islands": "35-Andaman and Nicobar Islands",
     "telangana": "36-Telangana",
     "andhra pradesh": "37-Andhra Pradesh",
@@ -2341,8 +2342,8 @@ class EcommerceBillImport(Document):
 					si.taxes_and_charges = ""
 					si.update_stock = 1
 
-					if first.customers_billing_state:
-						state = first.customers_billing_state
+					state = first.customers_delivery_state or first.customers_billing_state
+					if state:
 						if not state_code_dict.get(str(state).lower()):
 							raise Exception("State name Is Wrong Please Check")
 						si.place_of_supply = state_code_dict.get(str(state).lower())
@@ -2383,11 +2384,12 @@ class EcommerceBillImport(Document):
 								f"Multiple GSTINs detected for Buyer Invoice ID {invoice_key}: "
 								f"{si.ecommerce_gstin} vs {row_ecommerce_gstin}"
 							)
-						if not si.place_of_supply and row.customers_billing_state:
-							state = row.customers_billing_state
-							if not state_code_dict.get(str(state).lower()):
-								raise Exception("State name Is Wrong Please Check")
-							si.place_of_supply = state_code_dict.get(str(state).lower())
+						if not si.place_of_supply:
+							state = row.customers_delivery_state or row.customers_billing_state
+							if state:
+								if not state_code_dict.get(str(state).lower()):
+									raise Exception("State name Is Wrong Please Check")
+								si.place_of_supply = state_code_dict.get(str(state).lower())
 						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
 							# Don't set _ecom_name if invoice with that name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", row.buyer_invoice_id)
@@ -2589,8 +2591,8 @@ class EcommerceBillImport(Document):
 					si.taxes_and_charges = ""
 					si.update_stock = 1
 					si.company_address = company_address
-					if first.customers_billing_state:
-						state = first.customers_billing_state
+					state = first.customers_delivery_state or first.customers_billing_state
+					if state:
 						if not state_code_dict.get(str(state).lower()):
 							raise Exception("State name Is Wrong Please Check")
 						si.place_of_supply = state_code_dict.get(str(state).lower())
@@ -2629,11 +2631,12 @@ class EcommerceBillImport(Document):
 								f"Multiple GSTINs detected for Buyer Invoice ID {invoice_key}: "
 								f"{si.ecommerce_gstin} vs {row_ecommerce_gstin}"
 							)
-						if not si.place_of_supply and row.customers_billing_state:
-							state = row.customers_billing_state
-							if not state_code_dict.get(str(state).lower()):
-								raise Exception("State name Is Wrong Please Check")
-							si.place_of_supply = state_code_dict.get(str(state).lower())
+						if not si.place_of_supply:
+							state = row.customers_delivery_state or row.customers_billing_state
+							if state:
+								if not state_code_dict.get(str(state).lower()):
+									raise Exception("State name Is Wrong Please Check")
+								si.place_of_supply = state_code_dict.get(str(state).lower())
 						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
 							# Don't set _ecom_name if invoice with that name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", row.buyer_invoice_id)
@@ -3516,11 +3519,12 @@ class EcommerceBillImport(Document):
 								si.ecommerce_gstin = row_ecommerce_gstin
 							elif si.ecommerce_gstin != row_ecommerce_gstin:
 								si.ecommerce_gstin = ""
-						if not si.place_of_supply and row.customers_billing_state:
-							state = row.customers_billing_state
-							if not state_code_dict.get(str(state).lower()):
-								raise Exception("State name Is Wrong Please Check")
-							si.place_of_supply = state_code_dict.get(str(state).lower())
+						if not si.place_of_supply:
+							state = row.customers_delivery_state or row.customers_billing_state
+							if state:
+								if not state_code_dict.get(str(state).lower()):
+									raise Exception("State name Is Wrong Please Check")
+								si.place_of_supply = state_code_dict.get(str(state).lower())
 						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
 							if not frappe.db.exists("Sales Invoice", row.buyer_invoice_id):
 								si._ecom_name = row.buyer_invoice_id
@@ -3740,11 +3744,12 @@ class EcommerceBillImport(Document):
 								si.ecommerce_gstin = row_ecommerce_gstin
 							elif si.ecommerce_gstin != row_ecommerce_gstin:
 								si.ecommerce_gstin = ""
-						if not si.place_of_supply and row.customers_billing_state:
-							state = row.customers_billing_state
-							if not state_code_dict.get(str(state).lower()):
-								raise Exception("State name Is Wrong Please Check")
-							si.place_of_supply = state_code_dict.get(str(state).lower())
+						if not si.place_of_supply:
+							state = row.customers_delivery_state or row.customers_billing_state
+							if state:
+								if not state_code_dict.get(str(state).lower()):
+									raise Exception("State name Is Wrong Please Check")
+								si.place_of_supply = state_code_dict.get(str(state).lower())
 						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
 							# Avoid duplicate primary key errors if an invoice with this name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", row.buyer_invoice_id)
