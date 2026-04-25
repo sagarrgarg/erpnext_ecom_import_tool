@@ -52,8 +52,8 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				frm.set_df_property("cred_items", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 0);
-				frm.set_df_property("flipkart_items", "hidden", 0);
-				frm.set_df_property("flipkart_cashback", "hidden", 0);
+				frm.set_df_property("flipkart_items", "hidden", 1);
+				frm.set_df_property("flipkart_cashback", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 1);
 				frm.set_df_property("jio_mart_items", "hidden", 1);
 
@@ -74,6 +74,11 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 	}
 		
 		
+		// Load file preview if doc is saved
+		if (!frm.is_new()) {
+			frm.trigger("_load_preview");
+		}
+
 		// Show import log if available
 		if (frm.doc.status && frm.doc.status !== "Pending") {
 			frm.trigger("show_import_log");
@@ -148,8 +153,28 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 		}
 
 	},
-	
-	
+
+	_load_preview: function(frm) {
+		if (frm.is_new()) return;
+		frappe.call({
+			method: "frappe.handler.run_doc_method",
+			args: { dt: frm.doc.doctype, dn: frm.doc.name, method: "get_file_preview" },
+			callback: function(r) {
+				var html = (r.message && r.message.message) || "";
+				if (html && frm.fields_dict.import_preview) {
+					frm.fields_dict.import_preview.$wrapper.html(html);
+				}
+			}
+		});
+	},
+
+	flipkart_attach: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
+	mtr_b2b_attachment: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
+	mtr_b2c_attachment: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
+	stock_transfer_attachment: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
+	cred_attach: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
+	jio_mart_attach: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
+
 	ecommerce_mapping:function(frm){
 		frappe.model.get_value('Ecommerce Mapping', {'name': frm.doc.ecommerce_mapping}, 'platform', function(value) {
 			if(value.platform=="Amazon"){
@@ -180,7 +205,8 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				frm.set_df_property("cred_items", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 0);
-				frm.set_df_property("flipkart_items", "hidden", 0);
+				frm.set_df_property("flipkart_items", "hidden", 1);
+				frm.set_df_property("flipkart_cashback", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 1);
 				frm.set_df_property("jio_mart_items", "hidden", 1);
 				frm.set_value("amazon_type","")

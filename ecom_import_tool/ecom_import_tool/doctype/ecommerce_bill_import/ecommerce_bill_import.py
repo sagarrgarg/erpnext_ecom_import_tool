@@ -375,9 +375,69 @@ class EcommerceBillImport(Document):
 	def before_save(self):
 		pass
 
+	@frappe.whitelist()
+	def get_file_preview(self):
+		"""Return first 10 rows of attached file as HTML tables for preview."""
+		import pandas as pd
 
-	
-	
+		previews = []
+
+		def df_to_html(df, title, max_rows=10):
+			if df.empty:
+				return ""
+			sample = df.head(max_rows)
+			total = len(df)
+			header = "".join(f"<th>{c}</th>" for c in sample.columns)
+			rows = ""
+			for _, row in sample.iterrows():
+				cells = "".join(f"<td>{clean_csv_cell(str(v))}</td>" for v in row.values)
+				rows += f"<tr>{cells}</tr>"
+			return (
+				f"<h5>{title} ({total} rows total)</h5>"
+				f'<div style="overflow-x:auto;"><table class="table table-bordered table-sm">'
+				f"<thead><tr>{header}</tr></thead><tbody>{rows}</tbody></table></div>"
+			)
+
+		if self.ecommerce_mapping == "Flipkart" and self.flipkart_attach:
+			file_path = resolve_file_path(self.flipkart_attach)
+			try:
+				sales_df = pd.read_excel(file_path, sheet_name="Sales Report", dtype=str, keep_default_na=False)
+				previews.append(df_to_html(sales_df, "Sales Report"))
+			except Exception:
+				pass
+			try:
+				cb_df = pd.read_excel(file_path, sheet_name="Cash Back Report", dtype=str, keep_default_na=False)
+				previews.append(df_to_html(cb_df, "Cash Back Report"))
+			except Exception:
+				pass
+
+		elif self.ecommerce_mapping == "Amazon":
+			attach = self.mtr_b2b_attachment or self.mtr_b2c_attachment or self.stock_transfer_attachment
+			if attach:
+				file_path = resolve_file_path(attach)
+				try:
+					df = pd.read_csv(file_path, dtype=str, keep_default_na=False, na_filter=False)
+					previews.append(df_to_html(df, self.amazon_type or "Amazon"))
+				except Exception:
+					pass
+
+		elif self.ecommerce_mapping == "CRED" and self.cred_attach:
+			file_path = resolve_file_path(self.cred_attach)
+			try:
+				df = pd.read_csv(file_path, dtype=str, keep_default_na=False, na_filter=False)
+				previews.append(df_to_html(df, "CRED"))
+			except Exception:
+				pass
+
+		elif self.ecommerce_mapping == "Jiomart" and self.jio_mart_attach:
+			file_path = resolve_file_path(self.jio_mart_attach)
+			try:
+				df = pd.read_csv(file_path, dtype=str, keep_default_na=False, na_filter=False)
+				previews.append(df_to_html(df, "Jio Mart"))
+			except Exception:
+				pass
+
+		return "<br>".join(previews) if previews else ""
 
 	@frappe.whitelist()
 	def create_invoice(self):
