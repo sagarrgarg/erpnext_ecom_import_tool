@@ -440,7 +440,6 @@ class EcommerceBillImport(Document):
 		frappe.db.set_value("Ecommerce Bill Import", self.name, {
 			"status": self.status,
 			"error_json": getattr(self, "error_json", ""),
-			"error_html": getattr(self, "error_html", ""),
 		})
 
 	def show_preview(self):
