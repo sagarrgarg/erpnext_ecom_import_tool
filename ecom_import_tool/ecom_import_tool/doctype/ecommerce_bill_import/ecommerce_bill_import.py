@@ -398,27 +398,31 @@ class EcommerceBillImport(Document):
 
 	def invoice_creation(self):
 		frappe.msgprint("Data Import Started")
-		self._parse_attached_file()
+		frappe.db.set_single_value("Stock Settings", "auto_insert_price_list_rate_if_missing", 0)
+		try:
+			self._parse_attached_file()
 
-		if self.ecommerce_mapping=="Amazon":
-			if self.amazon_type=="MTR B2B":
-				self.create_sales_invoice_mtr_b2b()
-				frappe.msgprint("Amazon Data Import Finished")
-			elif self.amazon_type=="MTR B2C":
-				self.create_sales_invoice_mtr_b2c()
-				frappe.msgprint("Amazon Data Import Finished")
-			elif self.amazon_type=="Stock Transfer":
-				self.create_invoice_or_delivery_note()
-				frappe.msgprint("Amazon Data Import Finished")
-		if self.ecommerce_mapping=="CRED":
-			self.create_cred_sales_invoice()
-			frappe.msgprint("Cred Data Import Finished")
-		if self.ecommerce_mapping=="Flipkart":
-			self.create_flipkart_sales_invoice()
-			frappe.msgprint("Flipkart Data Import Finished")
-		if self.ecommerce_mapping=="Jiomart":
-			self.create_jio_mart()
-			frappe.msgprint("Jiomart Data Import Finished")
+			if self.ecommerce_mapping=="Amazon":
+				if self.amazon_type=="MTR B2B":
+					self.create_sales_invoice_mtr_b2b()
+					frappe.msgprint("Amazon Data Import Finished")
+				elif self.amazon_type=="MTR B2C":
+					self.create_sales_invoice_mtr_b2c()
+					frappe.msgprint("Amazon Data Import Finished")
+				elif self.amazon_type=="Stock Transfer":
+					self.create_invoice_or_delivery_note()
+					frappe.msgprint("Amazon Data Import Finished")
+			if self.ecommerce_mapping=="CRED":
+				self.create_cred_sales_invoice()
+				frappe.msgprint("Cred Data Import Finished")
+			if self.ecommerce_mapping=="Flipkart":
+				self.create_flipkart_sales_invoice()
+				frappe.msgprint("Flipkart Data Import Finished")
+			if self.ecommerce_mapping=="Jiomart":
+				self.create_jio_mart()
+				frappe.msgprint("Jiomart Data Import Finished")
+		finally:
+			frappe.db.set_single_value("Stock Settings", "auto_insert_price_list_rate_if_missing", 1)
 
 	def _parse_attached_file(self):
 		"""Parse attached file into in-memory child tables for processing.
