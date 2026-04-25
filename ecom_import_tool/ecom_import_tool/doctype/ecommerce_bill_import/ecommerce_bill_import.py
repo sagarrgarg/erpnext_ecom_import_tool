@@ -380,34 +380,34 @@ class EcommerceBillImport(Document):
 		"""Return first 10 rows of attached file as HTML tables for preview."""
 		import pandas as pd
 
+		PREVIEW_ROWS = 10
 		previews = []
 
-		def df_to_html(df, title, max_rows=10):
+		def df_to_html(df, title):
 			if df.empty:
 				return ""
-			sample = df.head(max_rows)
-			total = len(df)
-			header = "".join(f"<th>{c}</th>" for c in sample.columns)
+			header = "".join(f"<th style='white-space:nowrap;font-size:11px;'>{c}</th>" for c in df.columns)
 			rows = ""
-			for _, row in sample.iterrows():
-				cells = "".join(f"<td>{clean_csv_cell(str(v))}</td>" for v in row.values)
+			for _, row in df.iterrows():
+				cells = "".join(f"<td style='font-size:11px;'>{clean_csv_cell(str(v))}</td>" for v in row.values)
 				rows += f"<tr>{cells}</tr>"
 			return (
-				f"<h5>{title} ({total} rows total)</h5>"
-				f'<div style="overflow-x:auto;"><table class="table table-bordered table-sm">'
+				f"<h5>{title}</h5>"
+				f'<div style="overflow-x:auto;max-height:400px;overflow-y:auto;">'
+				f'<table class="table table-bordered table-sm" style="font-size:11px;">'
 				f"<thead><tr>{header}</tr></thead><tbody>{rows}</tbody></table></div>"
 			)
 
 		if self.ecommerce_mapping == "Flipkart" and self.flipkart_attach:
 			file_path = resolve_file_path(self.flipkart_attach)
 			try:
-				sales_df = pd.read_excel(file_path, sheet_name="Sales Report", dtype=str, keep_default_na=False)
-				previews.append(df_to_html(sales_df, "Sales Report"))
+				sales_df = pd.read_excel(file_path, sheet_name="Sales Report", dtype=str, keep_default_na=False, nrows=PREVIEW_ROWS)
+				previews.append(df_to_html(sales_df, "Sales Report (first 10 rows)"))
 			except Exception:
 				pass
 			try:
-				cb_df = pd.read_excel(file_path, sheet_name="Cash Back Report", dtype=str, keep_default_na=False)
-				previews.append(df_to_html(cb_df, "Cash Back Report"))
+				cb_df = pd.read_excel(file_path, sheet_name="Cash Back Report", dtype=str, keep_default_na=False, nrows=PREVIEW_ROWS)
+				previews.append(df_to_html(cb_df, "Cash Back Report (first 10 rows)"))
 			except Exception:
 				pass
 
@@ -416,24 +416,24 @@ class EcommerceBillImport(Document):
 			if attach:
 				file_path = resolve_file_path(attach)
 				try:
-					df = pd.read_csv(file_path, dtype=str, keep_default_na=False, na_filter=False)
-					previews.append(df_to_html(df, self.amazon_type or "Amazon"))
+					df = pd.read_csv(file_path, dtype=str, keep_default_na=False, na_filter=False, nrows=PREVIEW_ROWS)
+					previews.append(df_to_html(df, f"{self.amazon_type or 'Amazon'} (first 10 rows)"))
 				except Exception:
 					pass
 
 		elif self.ecommerce_mapping == "CRED" and self.cred_attach:
 			file_path = resolve_file_path(self.cred_attach)
 			try:
-				df = pd.read_csv(file_path, dtype=str, keep_default_na=False, na_filter=False)
-				previews.append(df_to_html(df, "CRED"))
+				df = pd.read_csv(file_path, dtype=str, keep_default_na=False, na_filter=False, nrows=PREVIEW_ROWS)
+				previews.append(df_to_html(df, "CRED (first 10 rows)"))
 			except Exception:
 				pass
 
 		elif self.ecommerce_mapping == "Jiomart" and self.jio_mart_attach:
 			file_path = resolve_file_path(self.jio_mart_attach)
 			try:
-				df = pd.read_csv(file_path, dtype=str, keep_default_na=False, na_filter=False)
-				previews.append(df_to_html(df, "Jio Mart"))
+				df = pd.read_csv(file_path, dtype=str, keep_default_na=False, na_filter=False, nrows=PREVIEW_ROWS)
+				previews.append(df_to_html(df, "Jio Mart (first 10 rows)"))
 			except Exception:
 				pass
 

@@ -156,24 +156,25 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 
 	_load_preview: function(frm) {
 		if (frm.is_new()) return;
+		if (frm.fields_dict.import_preview) {
+			frm.fields_dict.import_preview.$wrapper.html(
+				'<div class="text-muted"><i class="fa fa-spinner fa-spin"></i> Loading preview...</div>'
+			);
+		}
 		frappe.call({
 			method: "frappe.handler.run_doc_method",
 			args: { dt: frm.doc.doctype, dn: frm.doc.name, method: "get_file_preview" },
+			async: true,
 			callback: function(r) {
 				var html = (r.message && r.message.message) || "";
 				if (html && frm.fields_dict.import_preview) {
 					frm.fields_dict.import_preview.$wrapper.html(html);
+				} else if (frm.fields_dict.import_preview) {
+					frm.fields_dict.import_preview.$wrapper.html("");
 				}
 			}
 		});
 	},
-
-	flipkart_attach: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
-	mtr_b2b_attachment: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
-	mtr_b2c_attachment: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
-	stock_transfer_attachment: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
-	cred_attach: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
-	jio_mart_attach: function(frm) { frm.save().then(() => frm.trigger("_load_preview")); },
 
 	ecommerce_mapping:function(frm){
 		frappe.model.get_value('Ecommerce Mapping', {'name': frm.doc.ecommerce_mapping}, 'platform', function(value) {
