@@ -459,7 +459,9 @@ class EcommerceBillImport(Document):
 
 	def invoice_creation(self):
 		frappe.msgprint("Data Import Started")
-		frappe.db.set_single_value("Stock Settings", "auto_insert_price_list_rate_if_missing", 0)
+		stock_settings = frappe.get_cached_doc("Stock Settings")
+		original_value = stock_settings.auto_insert_price_list_rate_if_missing
+		stock_settings.auto_insert_price_list_rate_if_missing = 0
 		try:
 			self._parse_attached_file()
 
@@ -483,7 +485,7 @@ class EcommerceBillImport(Document):
 				self.create_jio_mart()
 				frappe.msgprint("Jiomart Data Import Finished")
 		finally:
-			frappe.db.set_single_value("Stock Settings", "auto_insert_price_list_rate_if_missing", 1)
+			stock_settings.auto_insert_price_list_rate_if_missing = original_value
 
 	def _parse_attached_file(self):
 		"""Parse attached file into in-memory child tables for processing.

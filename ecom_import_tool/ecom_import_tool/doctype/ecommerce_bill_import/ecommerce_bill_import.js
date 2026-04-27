@@ -176,6 +176,42 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 		});
 	},
 
+	flipkart_attach: function(frm) {
+		if (frm.doc.flipkart_attach) {
+			frm.save().then(() => frm.trigger("_load_preview"));
+		}
+	},
+
+	cred_attach: function(frm) {
+		if (frm.doc.cred_attach) {
+			frm.save().then(() => frm.trigger("_load_preview"));
+		}
+	},
+
+	jio_mart_attach: function(frm) {
+		if (frm.doc.jio_mart_attach) {
+			frm.save().then(() => frm.trigger("_load_preview"));
+		}
+	},
+
+	mtr_b2b_attachment: function(frm) {
+		if (frm.doc.mtr_b2b_attachment) {
+			frm.save().then(() => frm.trigger("_load_preview"));
+		}
+	},
+
+	mtr_b2c_attachment: function(frm) {
+		if (frm.doc.mtr_b2c_attachment) {
+			frm.save().then(() => frm.trigger("_load_preview"));
+		}
+	},
+
+	stock_transfer_attachment: function(frm) {
+		if (frm.doc.stock_transfer_attachment) {
+			frm.save().then(() => frm.trigger("_load_preview"));
+		}
+	},
+
 	ecommerce_mapping:function(frm){
 		frappe.model.get_value('Ecommerce Mapping', {'name': frm.doc.ecommerce_mapping}, 'platform', function(value) {
 			if(value.platform=="Amazon"){
