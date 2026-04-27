@@ -459,9 +459,9 @@ class EcommerceBillImport(Document):
 
 	def invoice_creation(self):
 		frappe.msgprint("Data Import Started")
-		stock_settings = frappe.get_cached_doc("Stock Settings")
-		original_value = stock_settings.auto_insert_price_list_rate_if_missing
-		stock_settings.auto_insert_price_list_rate_if_missing = 0
+		import erpnext.stock.get_item_details as _item_details_module
+		_original_insert_item_price = _item_details_module.insert_item_price
+		_item_details_module.insert_item_price = lambda *args, **kwargs: None
 		try:
 			self._parse_attached_file()
 
@@ -485,7 +485,7 @@ class EcommerceBillImport(Document):
 				self.create_jio_mart()
 				frappe.msgprint("Jiomart Data Import Finished")
 		finally:
-			stock_settings.auto_insert_price_list_rate_if_missing = original_value
+			_item_details_module.insert_item_price = _original_insert_item_price
 
 	def _parse_attached_file(self):
 		"""Parse attached file into in-memory child tables for processing.
@@ -2260,6 +2260,7 @@ class EcommerceBillImport(Document):
 				message=f"Processed {count}/{total_invoices} invoices",
 				phase="amazon_stock_transfer",
 			)
+			frappe.db.commit()
 
 		# -------- Final status update --------
 		self.error_json = json.dumps(errors) if errors else ""
@@ -2549,8 +2550,9 @@ class EcommerceBillImport(Document):
 						"message": str(e)
 					})
 
-			# 🔹 Progress update after each sale invoice group (no commit - will commit at end)
-			percent = int((sale_count / total_sale_invoices) * 50)  # Sales take first 50% of progress
+			frappe.db.commit()
+
+			percent = int((sale_count / total_sale_invoices) * 50)
 			self._publish_progress(
 				current=sale_count,
 				total=total_sale_invoices,
@@ -2559,8 +2561,7 @@ class EcommerceBillImport(Document):
 				phase="flipkart_sales",
 			)
 
-		# Submit Sales Invoices (no commits during loop - will commit at end)
-		for sii in si_invoice:
+		for idx, sii in enumerate(si_invoice, 1):
 			try:
 				frappe.get_doc("Sales Invoice", sii).submit()
 				sale_submitted_count += 1
@@ -2571,6 +2572,7 @@ class EcommerceBillImport(Document):
 					"event": "Sale",
 					"message": f"Submit failed: {str(e)}"
 				})
+			frappe.db.commit()
 
 		# ---------- RETURNS ----------
 		return_groups = {}
@@ -2795,8 +2797,9 @@ class EcommerceBillImport(Document):
 						"message": str(e)
 					})
 
-			# 🔹 Progress update after each return invoice group (no commit - will commit at end)
-			percent = 50 + int((return_count / total_return_invoices) * 50)  # Returns take last 50% of progress
+			frappe.db.commit()
+
+			percent = 50 + int((return_count / total_return_invoices) * 50)
 			self._publish_progress(
 				current=return_count,
 				total=total_return_invoices,
@@ -2805,8 +2808,7 @@ class EcommerceBillImport(Document):
 				phase="flipkart_returns",
 			)
 
-		# Submit Return Invoices (no commits during loop - will commit at end)
-		for sii in return_invoice:
+		for idx, sii in enumerate(return_invoice, 1):
 			try:
 				frappe.get_doc("Sales Invoice", sii).submit()
 				return_submitted_count += 1
@@ -2817,9 +2819,7 @@ class EcommerceBillImport(Document):
 					"event": "Return",
 					"message": f"Submit failed: {str(e)}"
 				})
-
-		# 🔹 Commit all changes at the end (like submit_after_import in data import)
-		frappe.db.commit()
+			frappe.db.commit()
 
 		self.error_json = str(json.dumps(errors))
 		expected_total = expected_sale_invoices + expected_return_invoices
