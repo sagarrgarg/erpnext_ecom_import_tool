@@ -30,6 +30,7 @@
   "import_log_section",
   "import_log_preview",
   "payload_count",
+  "import_summary",
   "error_html",
   "error_json"
  ],
@@ -104,6 +105,13 @@
    "fieldtype": "Int",
    "hidden": 1,
    "label": "Payload Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "import_summary",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Import Summary",
    "read_only": 1
   },
   {

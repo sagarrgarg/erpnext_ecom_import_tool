@@ -631,7 +631,21 @@ class EcommerceBillImport(Document):
 		frappe.db.set_value("Ecommerce Bill Import", self.name, {
 			"status": self.status,
 			"error_json": getattr(self, "error_json", ""),
+			"import_summary": getattr(self, "import_summary", "") or "",
 		})
+
+	def _set_import_summary(self, *, created=0, existing=0, failed=0, label=""):
+		"""Stash a small JSON breakdown so the JS import log can show
+		'X created, Y already existed, Z failed' next to the status banner."""
+		try:
+			self.import_summary = json.dumps({
+				"label": label or "",
+				"created": int(created or 0),
+				"existing": int(existing or 0),
+				"failed": int(failed or 0),
+			})
+		except Exception:
+			self.import_summary = ""
 
 	def _persist_errors(self, errors):
 		"""Persist errors lightweightly:
@@ -1674,6 +1688,12 @@ class EcommerceBillImport(Document):
 			self.status = "Success"
 			frappe.msgprint(f"All {success_count} items processed successfully!", indicator="green")
 
+		self._set_import_summary(
+			created=success_count,
+			existing=0,
+			failed=len(errors),
+			label="Amazon B2B",
+		)
 		self._persist_errors(errors)
 		self._update_import_status()
 
@@ -2209,6 +2229,12 @@ class EcommerceBillImport(Document):
 					indicator="green",
 				)
 
+		self._set_import_summary(
+			created=success_count,
+			existing=existing_total,
+			failed=len(errors),
+			label="Amazon B2C",
+		)
 		self._persist_errors(errors)
 		self._update_import_status()
 

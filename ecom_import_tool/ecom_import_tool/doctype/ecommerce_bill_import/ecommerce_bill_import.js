@@ -293,7 +293,23 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 		if (frm.doc.payload_count) {
 			html += `<p>Processed ${frm.doc.payload_count} records</p>`;
 		}
-		
+
+		if (frm.doc.import_summary) {
+			try {
+				const s = JSON.parse(frm.doc.import_summary);
+				const parts = [];
+				if (typeof s.created === "number") parts.push(`<strong>${s.created}</strong> newly created`);
+				if (typeof s.existing === "number") parts.push(`<strong>${s.existing}</strong> already existed (skipped)`);
+				if (typeof s.failed === "number" && s.failed > 0) parts.push(`<strong>${s.failed}</strong> failed`);
+				if (parts.length) {
+					const label = s.label ? `${frappe.utils.escape_html(s.label)}: ` : "";
+					html += `<p>${label}${parts.join(", ")}</p>`;
+				}
+			} catch (e) {
+				// ignore parse errors — fall through to generic message
+			}
+		}
+
 		html += `
 				<p>To view detailed log, please check the Error Log or Import Log report.</p>
 			</div>
