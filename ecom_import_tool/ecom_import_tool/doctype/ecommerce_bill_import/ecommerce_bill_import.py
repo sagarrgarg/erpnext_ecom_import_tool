@@ -602,11 +602,13 @@ class EcommerceBillImport(Document):
 			self.append_jio_mart()
 
 	def _update_import_status(self):
-		"""Persist only status and error fields to DB without saving child tables."""
+		"""Persist only status and error fields to DB without saving child tables.
+		`error_html` is an HTML fieldtype (no DB column) — rendered client-side
+		from `error_json`, so we never persist it directly.
+		"""
 		frappe.db.set_value("Ecommerce Bill Import", self.name, {
 			"status": self.status,
 			"error_json": getattr(self, "error_json", ""),
-			"error_html": getattr(self, "error_html", ""),
 		})
 
 	def _persist_errors(self, errors):
