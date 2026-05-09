@@ -1352,10 +1352,12 @@ class EcommerceBillImport(Document):
 											raise Exception(f"State name Is Wrong Please Check")
 										si.place_of_supply=state_code_dict.get(str(state.lower()))
 
+								_b2b_rate = flt(child_row.tax_exclusive_gross) / flt(child_row.quantity)
 								si.append("items", {
 									"item_code": itemcode,
 									"qty": flt(child_row.quantity),
-									"rate": flt(child_row.tax_exclusive_gross)/flt(child_row.quantity),
+									"rate": _b2b_rate,
+									"price_list_rate": _b2b_rate,
 									"description": child_row.item_description,
 									"warehouse": warehouse,
 									"gst_hsn_code":hsn_code,
@@ -1583,6 +1585,7 @@ class EcommerceBillImport(Document):
 									"item_code": itemcode,
 									"qty": line_qty,
 									"rate": line_rate,
+									"price_list_rate": line_rate,
 									"description": child_row.item_description,
 									"gst_hsn_code":hsn_code,
 									"warehouse": warehouse,
@@ -1837,10 +1840,12 @@ class EcommerceBillImport(Document):
 
 							# ---- Append Item ----
 							hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
+							_b2c_rate = flt(child_row.tax_exclusive_gross) / flt(child_row.quantity)
 							si.append("items", {
 								"item_code": itemcode,
 								"qty": flt(child_row.quantity),
-								"rate": flt(child_row.tax_exclusive_gross) / flt(child_row.quantity),
+								"rate": _b2c_rate,
+								"price_list_rate": _b2c_rate,
 								"description": child_row.item_description,
 								"warehouse": warehouse,
 								"gst_hsn_code": hsn_code,
@@ -2089,6 +2094,7 @@ class EcommerceBillImport(Document):
 									"item_code": itemcode,
 									"qty": line_qty,
 									"rate": line_rate,
+									"price_list_rate": line_rate,
 									"description": child_row.item_description,
 									"warehouse": warehouse,
 									"gst_hsn_code": hsn_code,
