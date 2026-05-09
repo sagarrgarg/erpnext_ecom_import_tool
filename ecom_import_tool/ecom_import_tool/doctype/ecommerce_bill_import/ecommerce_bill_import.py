@@ -348,6 +348,60 @@ state_code_dict = {
 _gstin_code_to_pos = {v.split("-", 1)[0]: v for v in state_code_dict.values()}
 
 
+def fy_prefix_for(posting_date):
+	"""Last 2 digits of Indian FY end year for the given date.
+
+	Indian FY runs April 1 → March 31.
+	  posting_date 2025-04-02 → FY 2025-26 → '26'
+	  posting_date 2026-03-15 → FY 2025-26 → '26'
+	  posting_date 2026-04-02 → FY 2026-27 → '27'
+	Returns '' if posting_date is missing/unparseable.
+	"""
+	if not posting_date:
+		return ""
+	try:
+		d = posting_date if hasattr(posting_date, "year") else getdate(posting_date)
+	except Exception:
+		return ""
+	if not d:
+		return ""
+	end_year = d.year + 1 if d.month >= 4 else d.year
+	return f"{end_year % 100:02d}"
+
+
+def qualify_with_fy(name, posting_date):
+	"""Prefix `name` with the FY-end-year prefix derived from posting_date.
+
+	Idempotent: if `name` already starts with the same prefix and a dash, returns
+	it unchanged so the helper is safe to call multiple times.
+	Used so Amazon ecom invoice numbers like 'DEL5-2' don't collide across years.
+	"""
+	prefix = fy_prefix_for(posting_date)
+	if not name or not prefix:
+		return name
+	name_str = str(name)
+	if name_str.startswith(f"{prefix}-"):
+		return name_str
+	return f"{prefix}-{name_str}"
+
+
+def find_existing_amazon_si(name, posting_date, **filters):
+	"""Find existing Sales Invoice trying FY-qualified name first, falling back
+	to the legacy unprefixed name (so re-imports of pre-prefix data still match
+	what's already in the DB).
+
+	Returns the actual stored name found, or None.
+	"""
+	qualified = qualify_with_fy(name, posting_date)
+	for candidate in {qualified, name}:
+		if not candidate:
+			continue
+		found = frappe.db.get_value("Sales Invoice", {"name": candidate, **filters}, "name")
+		if found:
+			return found
+	return None
+
+
 def resolve_flipkart_pos(state_value, seller_gstin, igst_amt=0, cgst_amt=0, sgst_amt=0):
 	"""Resolve place_of_supply for Flipkart rows.
 
@@ -1168,8 +1222,15 @@ class EcommerceBillImport(Document):
 				if not customer:
 					customer=frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "default_non_company_customer")
 
-				existing_si_draft = frappe.db.get_value("Sales Invoice", {"name": invoice_no, "docstatus": 0, "is_return": 0}, "name")
-				existing_si = frappe.db.get_value("Sales Invoice", {"name": invoice_no, "docstatus": 1, "is_return": 0}, "name")
+				# Amazon reuses invoice numbers across fiscal years; FY-qualify the
+				# name so re-imports of next-FY data with the same invoice_no don't
+				# silently match a prior-year SI.
+				_inv_dt = parse_export_datetime((shipment_items or refund_items or items_data)[0][1].get("invoice_date"))
+				_inv_posting_date = _inv_dt.date() if _inv_dt else None
+				qualified_invoice_no = qualify_with_fy(invoice_no, _inv_posting_date)
+
+				existing_si_draft = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=0, is_return=0)
+				existing_si = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=1, is_return=0)
 
 				amazon = frappe.get_doc("Ecommerce Mapping", {"platform": "Amazon"})
 				error_log=[]
@@ -1206,8 +1267,8 @@ class EcommerceBillImport(Document):
 								raise Exception(f"Invalid Invoice Date: {items_data[0][1].get('invoice_date')}")
 							si.posting_date = invoice_dt.date()
 							si.posting_time = invoice_dt.time()
-							if not frappe.db.exists("Sales Invoice", invoice_no):
-								si._ecom_name = invoice_no
+							if not frappe.db.exists("Sales Invoice", qualified_invoice_no):
+								si._ecom_name = qualified_invoice_no
 							si.custom_ecommerce_operator=self.ecommerce_mapping
 							si.custom_ecommerce_type=self.amazon_type
 							si.taxes = []
@@ -1357,12 +1418,14 @@ class EcommerceBillImport(Document):
 						)
 						use_debit_note = all_zero_qty
 
+						# FY-qualify the credit note name (Amazon reuses CN numbers
+						# across years).
+						_cn_dt = parse_export_datetime(refund_items[0][1].get("credit_note_date"))
+						_cn_posting_date = _cn_dt.date() if _cn_dt else None
+						qualified_cn_no = qualify_with_fy(credit_note_no, _cn_posting_date)
+
 						# Skip if this credit note already exists (idempotent re-runs)
-						existing_return = frappe.db.get_value(
-							"Sales Invoice",
-							{"name": credit_note_no, "docstatus": 1},
-							"name",
-						)
+						existing_return = find_existing_amazon_si(credit_note_no, _cn_posting_date, docstatus=1)
 						if existing_return:
 							percent = int((count / total_invoices) * 100) if total_invoices else 100
 							self._publish_progress(
@@ -1386,11 +1449,7 @@ class EcommerceBillImport(Document):
 								f"Please add it in Ecommerce Mapping '{amazon.name}' -> Ecommerce GSTIN Mapping."
 							)
 
-						draft_return = frappe.db.get_value(
-							"Sales Invoice",
-							{"name": credit_note_no, "docstatus": 0},
-							"name",
-						)
+						draft_return = find_existing_amazon_si(credit_note_no, _cn_posting_date, docstatus=0)
 
 						if draft_return:
 							si_return = frappe.get_doc("Sales Invoice", draft_return)
@@ -1413,8 +1472,8 @@ class EcommerceBillImport(Document):
 								)
 							si_return.posting_date = credit_note_dt.date()
 							si_return.posting_time = credit_note_dt.time()
-							if not frappe.db.exists("Sales Invoice", credit_note_no):
-								si_return._ecom_name = credit_note_no
+							if not frappe.db.exists("Sales Invoice", qualified_cn_no):
+								si_return._ecom_name = qualified_cn_no
 							si_return.taxes = []
 
 							if use_debit_note:
@@ -1645,8 +1704,15 @@ class EcommerceBillImport(Document):
 				shipment_items = [x for x in items_data if x[1].get("transaction_type") not in ["Refund", "Cancel"]]
 				refund_items = [x for x in items_data if x[1].get("transaction_type") == "Refund"]
 
-				existing_si_draft = frappe.db.get_value("Sales Invoice", {"name": invoice_no, "docstatus": 0}, "name")
-				existing_si = frappe.db.get_value("Sales Invoice", {"name": invoice_no, "docstatus": 1}, "name")
+				# Amazon reuses invoice numbers (e.g. 'DEL5-2') across fiscal years.
+				# Qualify the name with FY end-year prefix so 'DEL5-2' from FY 25-26
+				# and FY 26-27 don't collide on Sales Invoice.name.
+				_inv_dt = parse_export_datetime((shipment_items or refund_items or items_data)[0][1].get("invoice_date"))
+				_inv_posting_date = _inv_dt.date() if _inv_dt else None
+				qualified_invoice_no = qualify_with_fy(invoice_no, _inv_posting_date)
+
+				existing_si_draft = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=0)
+				existing_si = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=1)
 				amazon = frappe.get_doc("Ecommerce Mapping", {"platform": "Amazon"})
 				warehouse_mapping_missing = False
 				# If the sales invoice is already submitted, don't recreate it. Refunds (credit notes)
@@ -1682,8 +1748,8 @@ class EcommerceBillImport(Document):
 							raise Exception(f"Invalid Invoice Date: {items_data[0][1].get('invoice_date')}")
 						si.posting_date = invoice_dt.date()
 						si.posting_time = invoice_dt.time()
-						if not frappe.db.exists("Sales Invoice", invoice_no):
-							si._ecom_name = invoice_no
+						if not frappe.db.exists("Sales Invoice", qualified_invoice_no):
+							si._ecom_name = qualified_invoice_no
 						si.custom_ecommerce_operator = self.ecommerce_mapping
 						si.custom_ecommerce_type = self.amazon_type
 						si.taxes_and_charges = ""
@@ -1853,12 +1919,14 @@ class EcommerceBillImport(Document):
 						)
 						use_debit_note = all_zero_qty
 
+						# Qualify credit note name with FY end-year prefix to avoid
+						# cross-FY collisions (Amazon reuses CN numbers each year).
+						_cn_dt = parse_export_datetime(cn_refund_items[0][1].get("credit_note_date"))
+						_cn_posting_date = _cn_dt.date() if _cn_dt else None
+						qualified_cn_no = qualify_with_fy(credit_note_no, _cn_posting_date)
+
 						# Skip if this credit note already exists (idempotent re-runs)
-						existing_return = frappe.db.get_value(
-							"Sales Invoice",
-							{"name": credit_note_no, "docstatus": 1},
-							"name",
-						)
+						existing_return = find_existing_amazon_si(credit_note_no, _cn_posting_date, docstatus=1)
 						if existing_return:
 							existing_refund_count += len(cn_refund_items)
 							percent = int((count / total_invoices) * 100) if total_invoices else 100
@@ -1883,11 +1951,7 @@ class EcommerceBillImport(Document):
 								f"Please add it in Ecommerce Mapping '{amazon.name}' -> Ecommerce GSTIN Mapping."
 							)
 
-						draft_return = frappe.db.get_value(
-							"Sales Invoice",
-							{"name": credit_note_no, "docstatus": 0},
-							"name",
-						)
+						draft_return = find_existing_amazon_si(credit_note_no, _cn_posting_date, docstatus=0)
 
 						ritems_append = []
 						si_error = []
@@ -1913,8 +1977,8 @@ class EcommerceBillImport(Document):
 							si_return.posting_time = credit_note_dt.time()
 							si_return.custom_ecommerce_operator = self.ecommerce_mapping
 							si_return.custom_ecommerce_type = self.amazon_type
-							if not frappe.db.exists("Sales Invoice", credit_note_no):
-								si_return._ecom_name = credit_note_no
+							if not frappe.db.exists("Sales Invoice", qualified_cn_no):
+								si_return._ecom_name = qualified_cn_no
 							si_return.taxes = []
 
 							if use_debit_note:
