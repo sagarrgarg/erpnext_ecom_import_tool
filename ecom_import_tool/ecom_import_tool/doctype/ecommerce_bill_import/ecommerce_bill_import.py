@@ -552,7 +552,47 @@ class EcommerceBillImport(Document):
 		frappe.db.set_value("Ecommerce Bill Import", self.name, {
 			"status": self.status,
 			"error_json": getattr(self, "error_json", ""),
+			"error_html": getattr(self, "error_html", ""),
 		})
+
+	def _persist_errors(self, errors):
+		"""Persist errors lightweightly:
+		  - Full error list → Frappe Error Log (so the doc stays small).
+		  - First 10 errors → kept on the doc as a sample for the
+		    existing client-side renderer (mirrors Frappe Data Import).
+		  - A trailing synthetic row points to the Error Log entry so
+		    the user can jump straight to the full list.
+		"""
+		if not errors:
+			self.error_json = ""
+			self.error_html = ""
+			return
+
+		log_name = ""
+		try:
+			log = frappe.log_error(
+				title=f"Ecom Import errors: {self.name}",
+				message=json.dumps(errors, indent=2, default=str),
+			)
+			log_name = log.name if log else ""
+		except Exception:
+			log_name = ""
+
+		sample = list(errors[:10])
+		footer_msg = f"Full error log: {log_name}" if log_name else "See Error Log for details."
+		if len(errors) > 10:
+			footer_msg = (
+				f"... and {len(errors) - 10} more errors not shown. {footer_msg}"
+			)
+		sample.append({
+			"idx": "",
+			"invoice_id": "Error Log",
+			"event": "",
+			"message": footer_msg,
+		})
+
+		self.error_json = json.dumps(sample, default=str)
+		self.error_html = ""
 
 	def show_preview(self):
 		import pandas as pd
@@ -1542,13 +1582,13 @@ class EcommerceBillImport(Document):
 		if errors:
 			self.status = "Partial Success" if success_count else "Error"
 			indicator = "orange" if success_count else "red"
-			frappe.msgprint(f"{success_count} items processed, {len(errors)} failed. Check error HTML for details.", indicator=indicator, alert=True)
+			frappe.msgprint(f"{success_count} items processed, {len(errors)} failed. See sample below or full Error Log for details.", indicator=indicator, alert=True)
 		else:
 			self.error_html = ""
 			self.status = "Success"
 			frappe.msgprint(f"All {success_count} items processed successfully!", indicator="green")
 
-		self.error_json = str(json.dumps(errors))
+		self._persist_errors(errors)
 		self._update_import_status()
 
 		# 🔹 Final realtime update
@@ -2049,7 +2089,7 @@ class EcommerceBillImport(Document):
 			indicator = "orange" if success_count else "red"
 			frappe.msgprint(
 				f"{success_count} items processed{summary_extra}, {len(errors)} failed. "
-				"Check error HTML for details.",
+				"See sample below or full Error Log for details.",
 				indicator=indicator,
 				alert=True,
 			)
@@ -2075,7 +2115,7 @@ class EcommerceBillImport(Document):
 					indicator="green",
 				)
 
-		self.error_json = str(json.dumps(errors))
+		self._persist_errors(errors)
 		self._update_import_status()
 
 		# ---- 🔹 Final 100% Update ----
@@ -2343,7 +2383,7 @@ class EcommerceBillImport(Document):
 			frappe.db.commit()
 
 		# -------- Final status update --------
-		self.error_json = json.dumps(errors) if errors else ""
+		self._persist_errors(errors)
 		self.status = "Partial Success" if errors and success_count else "Error" if errors else "Success"
 		self._update_import_status()
 
@@ -2913,7 +2953,7 @@ class EcommerceBillImport(Document):
 				})
 			frappe.db.commit()
 
-		self.error_json = str(json.dumps(errors))
+		self._persist_errors(errors)
 		expected_total = expected_sale_invoices + expected_return_invoices
 		completed_total = sale_existing_count + sale_submitted_count + return_existing_count + return_submitted_count
 
@@ -3464,7 +3504,7 @@ class EcommerceBillImport(Document):
 			)
 
 		# --- Final status + progress ---
-		self.error_json = json.dumps(errors) if errors else ""
+		self._persist_errors(errors)
 		if errors and success_invoices:
 			self.status = "Partial Success"
 		elif errors and not success_invoices:
@@ -3997,7 +4037,7 @@ class EcommerceBillImport(Document):
 			phase="jiomart",
 		)
 
-		self.error_json = str(json.dumps(errors))
+		self._persist_errors(errors)
 		if len(errors) == 0:
 			self.status = "Success"
 		elif len(self.jio_mart_items) != len(errors):
