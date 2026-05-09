@@ -510,6 +510,7 @@ class EcommerceBillImport(Document):
 		})
 
 	def show_preview(self):
+		import pandas as pd
 		self.mtr_b2b=[]
 		if self.mtr_b2b_attachment:
 			# Read CSV as strings to preserve long IDs exactly (avoid scientific notation)
@@ -629,6 +630,7 @@ class EcommerceBillImport(Document):
 				)
 
 	def append_mtr_b2c(self):
+		import pandas as pd
 		self.mtr_b2c = []
 		if self.mtr_b2c_attachment:
 			from frappe.utils.data import getdate
@@ -671,6 +673,7 @@ class EcommerceBillImport(Document):
 
 
 	def append_stock_transfer_attachment(self):
+		import pandas as pd
 		self.stock_transfer=[]
 		if self.stock_transfer_attachment:
 			def clean(val):
@@ -929,7 +932,10 @@ class EcommerceBillImport(Document):
 		try:
 			cb_df = pd.read_excel(file_path, sheet_name="Cash Back Report", dtype=str)
 		except (ValueError, KeyError):
-			cb_df = pd.DataFrame()
+			frappe.throw(
+				"Flipkart XLSX is missing the 'Cash Back Report' sheet. "
+				"Do not rename or remove this sheet — re-export from Flipkart and try again."
+			)
 
 		if not cb_df.empty:
 			cb_fields = [d.fieldname for d in frappe.get_meta("Flipkart Transaction Items").fields]
@@ -949,6 +955,7 @@ class EcommerceBillImport(Document):
 
 					
 	def append_jio_mart(self):
+		import pandas as pd
 		self.jio_mart_items = []
 		if self.jio_mart_attach:
 			from frappe.utils.data import getdate
