@@ -348,25 +348,32 @@ state_code_dict = {
 _gstin_code_to_pos = {v.split("-", 1)[0]: v for v in state_code_dict.values()}
 
 
-def fy_prefix_for(posting_date):
-	"""Last 2 digits of Indian FY end year for the given date.
-
-	Indian FY runs April 1 → March 31.
-	  posting_date 2025-04-02 → FY 2025-26 → '26'
-	  posting_date 2026-03-15 → FY 2025-26 → '26'
-	  posting_date 2026-04-02 → FY 2026-27 → '27'
-	Returns '' if posting_date is missing/unparseable.
+def _fiscal_year_end(posting_date):
+	"""Return the Fiscal Year *end* date for posting_date using ERPNext's
+	Fiscal Year doctype, or None if it cannot be resolved.
+	Honours the company's configured FY (does not assume April-March, doesn't
+	rely on the FY's display name which can be customised to anything).
 	"""
 	if not posting_date:
-		return ""
+		return None
 	try:
-		d = posting_date if hasattr(posting_date, "year") else getdate(posting_date)
+		from erpnext.accounts.utils import get_fiscal_year
+		_name, _start, end_date = get_fiscal_year(posting_date)
+		return getdate(end_date)
 	except Exception:
+		return None
+
+
+def fy_prefix_for(posting_date):
+	"""Last 2 digits of the fiscal-year end year (from Fiscal Year doctype).
+
+	  FY 2025-26 → '26', FY 2026-27 → '27'.
+	Returns '' if posting_date is missing or no Fiscal Year covers it.
+	"""
+	end = _fiscal_year_end(posting_date)
+	if not end:
 		return ""
-	if not d:
-		return ""
-	end_year = d.year + 1 if d.month >= 4 else d.year
-	return f"{end_year % 100:02d}"
+	return f"{end.year % 100:02d}"
 
 
 def qualify_with_fy(name, posting_date):
@@ -387,18 +394,33 @@ def qualify_with_fy(name, posting_date):
 
 def find_existing_amazon_si(name, posting_date, **filters):
 	"""Find existing Sales Invoice trying FY-qualified name first, falling back
-	to the legacy unprefixed name (so re-imports of pre-prefix data still match
-	what's already in the DB).
+	to the legacy unprefixed name *only when the candidate's posting_date is
+	in the same fiscal year* (so re-imports of pre-prefix data match, but
+	cross-FY re-uses do not collide).
 
 	Returns the actual stored name found, or None.
 	"""
 	qualified = qualify_with_fy(name, posting_date)
-	for candidate in {qualified, name}:
-		if not candidate:
-			continue
-		found = frappe.db.get_value("Sales Invoice", {"name": candidate, **filters}, "name")
-		if found:
-			return found
+
+	found = frappe.db.get_value("Sales Invoice", {"name": qualified, **filters}, "name")
+	if found:
+		return found
+
+	if qualified != name and name:
+		candidate = frappe.db.get_value(
+			"Sales Invoice",
+			{"name": name, **filters},
+			["name", "posting_date"],
+			as_dict=True,
+		)
+		if candidate:
+			# Same FY check: legacy match only counts if its posting_date is in the
+			# same Fiscal Year as the row we're importing. Without this check, a
+			# legacy 'DEL5-1' from FY 25-26 would wrongly absorb a new FY 26-27 import.
+			lookup_end = _fiscal_year_end(posting_date)
+			candidate_end = _fiscal_year_end(candidate.posting_date)
+			if lookup_end and candidate_end and lookup_end == candidate_end:
+				return candidate.name
 	return None
 
 
