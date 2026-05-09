@@ -344,6 +344,51 @@ state_code_dict = {
 }
 
 
+# Reverse lookup: GSTIN state code prefix ("27") → full POS label ("27-Maharashtra")
+_gstin_code_to_pos = {v.split("-", 1)[0]: v for v in state_code_dict.values()}
+
+
+def resolve_flipkart_pos(state_value, seller_gstin, igst_amt=0, cgst_amt=0, sgst_amt=0):
+	"""Resolve place_of_supply for Flipkart rows.
+
+	Flipkart anonymizes buyer info ('-' / 'NA' / blank) on some returns.
+	When buyer state is missing, derive POS from the tax pattern:
+	  * IGST present, no CGST/SGST → interstate → '97-Other Territory'
+	  * CGST/SGST present, no IGST → intra-state → seller GSTIN's state
+	Otherwise raise so the row surfaces in the error log.
+	"""
+	from frappe.utils import flt
+
+	key = normalize_state_key(state_value)
+	if key and key not in {"-", "na", "n/a", "nan", "none", "null"}:
+		pos = state_code_dict.get(key)
+		if not pos:
+			raise Exception(f"State name Is Wrong Please Check: {state_value}")
+		return pos
+
+	igst = abs(flt(igst_amt))
+	cgst = abs(flt(cgst_amt))
+	sgst = abs(flt(sgst_amt))
+
+	if igst and not (cgst or sgst):
+		return state_code_dict["other territory"]
+
+	if (cgst or sgst) and not igst:
+		gstin_code = (seller_gstin or "")[:2]
+		pos = _gstin_code_to_pos.get(gstin_code)
+		if not pos:
+			raise Exception(
+				f"Cannot derive place_of_supply: anonymized buyer state and "
+				f"unknown seller GSTIN state code '{gstin_code}'"
+			)
+		return pos
+
+	raise Exception(
+		"Cannot determine place_of_supply: buyer state is anonymized "
+		"and tax pattern is ambiguous (need either IGST or CGST/SGST)."
+	)
+
+
 class EcommerceBillImport(Document):
 	def validate(self):
 		if not self.ecommerce_mapping:
@@ -2413,10 +2458,13 @@ class EcommerceBillImport(Document):
 					si.update_stock = 1
 
 					state = first.customers_delivery_state or first.customers_billing_state
-					if state:
-						if not state_code_dict.get(str(state).lower()):
-							raise Exception("State name Is Wrong Please Check")
-						si.place_of_supply = state_code_dict.get(str(state).lower())
+					si.place_of_supply = resolve_flipkart_pos(
+						state,
+						first.seller_gstin,
+						igst_amt=sum(flt(r.igst_amount) for r in rows),
+						cgst_amt=sum(flt(r.cgst_amount) for r in rows),
+						sgst_amt=sum(flt(r.sgst_amount) for r in rows),
+					)
 
 					si.company_address = company_address
 					si.ecommerce_gstin = ecommerce_gstin
@@ -2456,10 +2504,13 @@ class EcommerceBillImport(Document):
 							)
 						if not si.place_of_supply:
 							state = row.customers_delivery_state or row.customers_billing_state
-							if state:
-								if not state_code_dict.get(str(state).lower()):
-									raise Exception("State name Is Wrong Please Check")
-								si.place_of_supply = state_code_dict.get(str(state).lower())
+							si.place_of_supply = resolve_flipkart_pos(
+								state,
+								row.seller_gstin,
+								igst_amt=row.igst_amount,
+								cgst_amt=row.cgst_amount,
+								sgst_amt=row.sgst_amount,
+							)
 						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
 							# Don't set _ecom_name if invoice with that name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", row.buyer_invoice_id)
@@ -2663,10 +2714,13 @@ class EcommerceBillImport(Document):
 					si.update_stock = 1
 					si.company_address = company_address
 					state = first.customers_delivery_state or first.customers_billing_state
-					if state:
-						if not state_code_dict.get(str(state).lower()):
-							raise Exception("State name Is Wrong Please Check")
-						si.place_of_supply = state_code_dict.get(str(state).lower())
+					si.place_of_supply = resolve_flipkart_pos(
+						state,
+						first.seller_gstin,
+						igst_amt=sum(flt(r.igst_amount) for r in rows),
+						cgst_amt=sum(flt(r.cgst_amount) for r in rows),
+						sgst_amt=sum(flt(r.sgst_amount) for r in rows),
+					)
 					si.ecommerce_gstin = ecommerce_gstin
 					si.location = location
 					si.is_return = 1
@@ -2704,10 +2758,13 @@ class EcommerceBillImport(Document):
 							)
 						if not si.place_of_supply:
 							state = row.customers_delivery_state or row.customers_billing_state
-							if state:
-								if not state_code_dict.get(str(state).lower()):
-									raise Exception("State name Is Wrong Please Check")
-								si.place_of_supply = state_code_dict.get(str(state).lower())
+							si.place_of_supply = resolve_flipkart_pos(
+								state,
+								row.seller_gstin,
+								igst_amt=row.igst_amount,
+								cgst_amt=row.cgst_amount,
+								sgst_amt=row.sgst_amount,
+							)
 						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
 							# Don't set _ecom_name if invoice with that name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", row.buyer_invoice_id)
@@ -2931,10 +2988,13 @@ class EcommerceBillImport(Document):
 					si.ecom_order_id = row.order_id
 
 				state = row.customers_delivery_state or ""
-				if state:
-					state_key = normalize_state_key(state)
-					if state_code_dict.get(state_key):
-						si.place_of_supply = state_code_dict.get(state_key)
+				si.place_of_supply = resolve_flipkart_pos(
+					state,
+					row.seller_gstin,
+					igst_amt=row.igst_amount,
+					cgst_amt=row.cgst_amount,
+					sgst_amt=row.sgst_amount_or_utgst_as_applicable,
+				)
 
 				qty = -1 if is_credit else 1
 				rate = abs(flt(row.taxable_value))
