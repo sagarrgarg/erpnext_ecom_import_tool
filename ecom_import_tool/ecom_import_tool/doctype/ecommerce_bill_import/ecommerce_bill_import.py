@@ -1574,6 +1574,8 @@ class EcommerceBillImport(Document):
 
 		errors, error_names = [], []
 		success_count = 0
+		existing_shipment_count = 0
+		existing_refund_count = 0
 		invoice_groups = {}
 
 		# -------- Group Rows by Invoice --------
@@ -1610,6 +1612,7 @@ class EcommerceBillImport(Document):
 				# If the sales invoice is already submitted, don't recreate it. Refunds (credit notes)
 				# are handled below independently.
 				if shipment_items and existing_si:
+					existing_shipment_count += len(shipment_items)
 					shipment_items = []
 
 				# -------- Shipment Items --------
@@ -1817,6 +1820,7 @@ class EcommerceBillImport(Document):
 							"name",
 						)
 						if existing_return:
+							existing_refund_count += len(cn_refund_items)
 							percent = int((count / total_invoices) * 100) if total_invoices else 100
 							self._publish_progress(
 								current=count,
@@ -2038,14 +2042,38 @@ class EcommerceBillImport(Document):
 			frappe.db.commit()
 
 		# -------- Final Summary --------
+		existing_total = existing_shipment_count + existing_refund_count
+		summary_extra = f" ({existing_total} already existed, skipped)" if existing_total else ""
 		if errors:
 			self.status = "Partial Success" if success_count else "Error"
 			indicator = "orange" if success_count else "red"
-			frappe.msgprint(f"{success_count} items processed, {len(errors)} failed. Check error HTML for details.", indicator=indicator, alert=True)
+			frappe.msgprint(
+				f"{success_count} items processed{summary_extra}, {len(errors)} failed. "
+				"Check error HTML for details.",
+				indicator=indicator,
+				alert=True,
+			)
 		else:
 			self.error_html = ""
-			self.status = "Success"
-			frappe.msgprint(f"All {success_count} items processed successfully!", indicator="green")
+			if success_count == 0 and existing_total == 0:
+				self.status = "Error"
+				frappe.msgprint(
+					"No invoices were created — input file produced no shipment or refund rows. "
+					"Check Transaction Type / Invoice Number columns.",
+					indicator="red",
+				)
+			elif success_count == 0 and existing_total > 0:
+				self.status = "Success"
+				frappe.msgprint(
+					f"Nothing new created. All {existing_total} items already exist as submitted invoices.",
+					indicator="blue",
+				)
+			else:
+				self.status = "Success"
+				frappe.msgprint(
+					f"All {success_count} items processed successfully!{summary_extra}",
+					indicator="green",
+				)
 
 		self.error_json = str(json.dumps(errors))
 		self._update_import_status()
