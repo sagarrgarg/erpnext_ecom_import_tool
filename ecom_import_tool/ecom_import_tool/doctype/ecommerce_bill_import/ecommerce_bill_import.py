@@ -19,6 +19,7 @@ import os
 
 from ecom_import_tool.ecom_import_tool.utils.amazon_si import (
 	apply_pos_payment,
+	normalize_tax_rate,
 	_amazon_init_si_header,
 	_amazon_append_si_line,
 	_amazon_save_and_submit,
@@ -191,17 +192,6 @@ def parse_export_time(value):
 	"""Return a time from an export value (date or datetime string)."""
 	dt = parse_export_datetime(value)
 	return dt.time() if dt else None
-
-
-def normalize_tax_rate(rate):
-	"""Normalize tax rate to the percentage ERPNext expects (e.g. 5 for 5%).
-
-	Some sources provide 0.05 (fraction) and some provide 5 (percent).
-	"""
-	rate = flt(rate)
-	if 0 < rate < 1:
-		return rate * 100
-	return rate
 
 
 def safe_refund_qty_rate(quantity, tax_exclusive_gross):

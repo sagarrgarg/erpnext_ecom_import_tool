@@ -22,6 +22,18 @@ import frappe
 from frappe.utils import flt, getdate, today
 
 
+def normalize_tax_rate(rate):
+	"""Normalize tax rate to percentage ERPNext expects (5 for 5%).
+
+	Ecommerce CSVs vary — some send 0.05, others send 5. Anything in
+	(0, 1) is treated as a fraction and scaled up.
+	"""
+	rate = flt(rate)
+	if 0 < rate < 1:
+		return rate * 100
+	return rate
+
+
 def apply_pos_payment(si, mode_of_payment):
 	"""Mark a Sales Invoice as POS-settled 100% via the given Mode of Payment.
 
@@ -120,15 +132,16 @@ def _amazon_append_si_line(si, *, item_code, qty, rate, hsn_code, description,
 	for tax_type, tax_rate, tax_amount, acc_head in taxes:
 		if not tax_amount:
 			continue
+		normalized_rate = normalize_tax_rate(tax_rate)
 		existing = next((t for t in si.taxes if t.account_head == acc_head), None)
 		if existing:
 			existing.tax_amount += tax_amount
-			existing.rate = tax_rate
+			existing.rate = normalized_rate
 		else:
 			si.append("taxes", {
 				"charge_type": "On Net Total",
 				"account_head": acc_head,
-				"rate": tax_rate,
+				"rate": normalized_rate,
 				"tax_amount": tax_amount,
 				"description": tax_type,
 			})
