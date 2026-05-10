@@ -2513,7 +2513,6 @@ class EcommerceBillImport(Document):
 		from frappe.utils import flt, getdate
 
 		errors = []
-		return_invoice = []
 		sale_existing_count = 0
 		sale_submitted_count = 0
 		return_existing_count = 0
@@ -2849,26 +2848,35 @@ class EcommerceBillImport(Document):
 					"docstatus": 0
 				}, "name")
 
-				if draft_name:
-					si = frappe.get_doc("Sales Invoice", draft_name)
-					si.is_return = 1
-					# Ecommerce GSTIN is mandatory (enforced for draft re-runs too)
-					si.ecommerce_gstin = get_gstin(rows[0].seller_gstin)
-				else:
-					first = rows[0]
-					warehouse, location, company_address = get_warehouse_info(first.warehouse_id)
-					ecommerce_gstin = get_gstin(first.seller_gstin)
+				first = rows[0]
+				posting_date_val = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
+				posting_dt = datetime.combine(posting_date_val, datetime.min.time())
 
-					si = frappe.new_doc("Sales Invoice")
-					si.flags.ignore_pricing_rule = 1
-					si.customer = customer
-					si.set_posting_time = 1
-					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
-					si.custom_ecommerce_operator = self.ecommerce_mapping
-					si.custom_ecommerce_type = self.amazon_type
-					si.taxes_and_charges = ""
-					si.update_stock = 1
+				warehouse, location, company_address = get_warehouse_info(first.warehouse_id)
+				ecommerce_gstin = get_gstin(first.seller_gstin)
+
+				draft_doc = frappe.get_doc("Sales Invoice", draft_name) if draft_name else None
+				si = _amazon_init_si_header(
+					customer=customer,
+					posting_dt=posting_dt,
+					ecom_name=invoice_key,
+					is_return=True,
+					is_debit_note=False,
+					return_against=None,  # Flipkart returns don't link to a specific submitted SI
+					ecommerce_operator=self.ecommerce_mapping,
+					amazon_type=self.amazon_type or "",
+					ecommerce_gstin=ecommerce_gstin,
+					update_stock=1,
+					draft_doc=draft_doc,
+				)
+				# Preserve Flipkart-specific header mutations not covered by helper:
+				if not si.company_address:
 					si.company_address = company_address
+				if not si.location:
+					si.location = location
+
+				# Place of supply uses Flipkart-specific resolver (handles anonymized buyer state).
+				if not si.place_of_supply:
 					state = first.customers_delivery_state or first.customers_billing_state
 					si.place_of_supply = resolve_flipkart_pos(
 						state,
@@ -2877,11 +2885,6 @@ class EcommerceBillImport(Document):
 						cgst_amt=sum(flt(r.cgst_amount) for r in rows),
 						sgst_amt=sum(flt(r.sgst_amount) for r in rows),
 					)
-					si.ecommerce_gstin = ecommerce_gstin
-					si.location = location
-					si.is_return = 1
-					if not frappe.db.exists("Sales Invoice", first.buyer_invoice_id):
-						si._ecom_name = first.buyer_invoice_id
 
 				existing_item_ids = {
 					d.get("custom_ecom_item_id")
@@ -2927,7 +2930,6 @@ class EcommerceBillImport(Document):
 							if not existing_by_name:
 								si._ecom_name = row.buyer_invoice_id
 
-						item_name = frappe.db.get_value("Item", item_code, "item_name")
 						hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code")
 
 						qty_abs = abs(flt(row.item_quantity))
@@ -2945,39 +2947,24 @@ class EcommerceBillImport(Document):
 
 						rate = taxable / qty_abs if qty_abs else 0
 
-						item_row = {
-							"item_code": item_code,
-							"item_name": item_name,
-							"gst_hsn_code": hsn_code,
-							"qty": -qty_abs,
-							"rate": rate,
-							"price_list_rate": rate,
-							"description": row.product_titledescription,
-							"warehouse": warehouse,
-							"custom_ecom_item_id": row.order_item_id
-						}
-
-						si.append("items", item_row)
+						_amazon_append_si_line(
+							si,
+							item_code=item_code,
+							qty=-qty_abs,
+							rate=rate,
+							hsn_code=hsn_code,
+							description=row.product_titledescription,
+							warehouse=warehouse,
+							income_account=flipkart.income_account,
+							custom_ecom_item_id=row.order_item_id,
+							taxes=[
+								("CGST", flt(row.cgst_rate), cgst_amt, "Output Tax CGST - KGOPL"),
+								("SGST", flt(row.sgst_rate), sgst_amt, "Output Tax SGST - KGOPL"),
+								("IGST", flt(row.igst_rate), igst_amt, "Output Tax IGST - KGOPL"),
+							],
+						)
 						existing_item_ids.add(row.order_item_id)
 						items_appended += 1
-
-						for tax_type, tax_rate, amount, acc_head in [
-							("CGST", flt(row.cgst_rate), cgst_amt, "Output Tax CGST - KGOPL"),
-							("SGST", flt(row.sgst_rate), sgst_amt, "Output Tax SGST - KGOPL"),
-							("IGST", flt(row.igst_rate), igst_amt, "Output Tax IGST - KGOPL")
-						]:
-							if amount:
-								existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-								if existing_tax:
-									existing_tax.tax_amount += amount
-								else:
-									si.append("taxes", {
-										"charge_type": "On Net Total",
-										"rate": tax_rate,
-										"account_head": acc_head,
-										"tax_amount": amount,
-										"description": tax_type
-									})
 					except Exception as row_error:
 						group_errors = True
 						errors.append({
@@ -2991,15 +2978,21 @@ class EcommerceBillImport(Document):
 					order_ids = set(r.order_id for r in rows if r.order_id)
 					if order_ids:
 						si.ecom_order_id = ", ".join(sorted(order_ids))
-					si.save(ignore_permissions=True)
-					for j in si.items:
-						j.item_tax_template = ""
-						j.item_tax_rate = frappe._dict()
-					si.due_date = getdate(today())
-					si.save(ignore_permissions=True)
-
-				if not group_errors and si.docstatus == 0 and si.items:
-					return_invoice.append(si.name)
+					try:
+						_amazon_save_and_submit(
+							si,
+							mode_of_payment=flipkart.mode_of_payment,
+							due_date=getdate(today()),
+						)
+						return_submitted_count += 1
+						frappe.db.commit()
+					except Exception as submit_error:
+						errors.append({
+							"idx": "",
+							"invoice_id": invoice_key,
+							"event": "Return",
+							"message": f"Submit failed: {str(submit_error)}",
+						})
 				elif not group_errors and not si.items:
 					errors.append({
 						"idx": rows[0].idx if rows else "",
@@ -3027,19 +3020,6 @@ class EcommerceBillImport(Document):
 				message=f"Processed {return_count}/{total_return_invoices} return invoices",
 				phase="flipkart_returns",
 			)
-
-		for idx, sii in enumerate(return_invoice, 1):
-			try:
-				frappe.get_doc("Sales Invoice", sii).submit()
-				return_submitted_count += 1
-			except Exception as e:
-				errors.append({
-					"idx": "",
-					"invoice_id": sii,
-					"event": "Return",
-					"message": f"Submit failed: {str(e)}"
-				})
-			frappe.db.commit()
 
 		self._persist_errors(errors)
 		expected_total = expected_sale_invoices + expected_return_invoices
