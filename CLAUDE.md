@@ -57,10 +57,20 @@ ecom_import_tool/
 
 ## Ecommerce Mapping — `mode_of_payment` (added 2026-05-10)
 
-- `mode_of_payment` (Link → Mode of Payment, required, unique per mapping). Drives `is_pos=1` on every SI / CN created from this mapping (Amazon B2B + B2C + Flipkart sales/returns).
+- `mode_of_payment` (Link → Mode of Payment, required, unique per mapping). Drives `is_pos=1` on every SI / CN created from this mapping (Amazon B2B + B2C + Flipkart sales/returns + CRED sales/refunds).
 - The MoP must have a Default Account configured for at least one company (validated at Ecommerce Mapping save).
 - Stock Transfer is excluded from this behavior (inter-company internal flow, no real payment movement).
-- CRED / JioMart will adopt the same field in a follow-up port; helpers in `ecom_import_tool/utils/amazon_si.py` already accept platform-agnostic params.
+- JioMart will adopt the same field in a follow-up port; helpers in `ecom_import_tool/utils/amazon_si.py` already accept platform-agnostic params.
+
+## CRED — Refund handling (added 2026-05-10)
+
+- `cred_attach` (CSV) — sales export (`sales_all_*.csv`). Required.
+- `cred_refund_attach` (XLSX) — CRED Mail Report. Optional. The `Refund` sheet is parsed into a new `cred_refund` child table (one CRED Refund row per refund line item).
+- Sales rows with `Order Status` Cancelled are skipped (no SI is created).
+- For each refund row, the parser joins `cred_order_item_id` ↔ CSV's `Suborder No` (with leading backtick stripped) to resolve the EE Invoice No.
+- Credit notes are created ONLY when the parent SI (`ee_invoice_no`) is already submitted in ERPNext. If the parent SI is not yet in DB, the refund is skipped silently and will be picked up on a subsequent refund-only import once the sales report for that EE Invoice No has been imported.
+- CN naming: `<EE_INV>RT` (no dash). Idempotent: re-runs skip existing CNs.
+- Penalty sheet from CRED Mail Report is NOT imported automatically (different beast — would be a Journal Entry, not a Sales Invoice).
 
 ## Bench Commands
 
