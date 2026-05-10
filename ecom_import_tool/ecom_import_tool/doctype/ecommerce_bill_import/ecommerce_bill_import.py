@@ -3250,6 +3250,9 @@ class EcommerceBillImport(Document):
 		)
 
 		success_invoices = 0
+		success_refunds = 0
+		existing_count = 0
+		existing_refund_count = 0
 
 		for count, (invoice_no, rows) in enumerate(invoice_groups.items(), start=1):
 			first_idx = None
@@ -3269,7 +3272,7 @@ class EcommerceBillImport(Document):
 						message=f"Processed {count}/{total_invoices} invoices (skipped existing)",
 						phase="cred_shipments",
 					)
-					success_invoices += 1  # Count as success (already done)
+					existing_count += 1
 					continue
 
 				# Check for draft to resume
@@ -3455,26 +3458,182 @@ class EcommerceBillImport(Document):
 				phase="cred_shipments",
 			)
 
+		# -------- REFUND credit notes --------
+		# Iterates self.cred_refund (populated from the CRED Mail Report Refund
+		# sheet on validate). One CN per parent EE Invoice No, named
+		# "<EE_INV>RT". Idempotent: re-runs skip already-submitted CNs. Refund
+		# rows whose parent SI is not yet submitted are skipped silently — they
+		# will be picked up on a later import once the sales side lands.
+		refund_groups = {}
+		for r in (self.cred_refund or []):
+			ee = (r.ee_invoice_no or "").strip()
+			if not ee:
+				errors.append({
+					"idx": r.idx,
+					"invoice_id": r.cred_order_item_id or "",
+					"event": "Refund",
+					"message": "No EE Invoice No found for this refund (CSV had no matching parent).",
+				})
+				continue
+			parent = frappe.db.get_value(
+				"Sales Invoice",
+				{"name": ee, "docstatus": 1},
+				"name",
+			)
+			if not parent:
+				# Parent SI not yet submitted — skip silently. Will be picked up
+				# on the next refund import once sales for that EE Inv land.
+				continue
+			refund_groups.setdefault(ee, []).append(r)
+
+		# Resolve the generic "refund line item" once. CRED's Ecommerce Mapping
+		# does not have a dedicated refund-item field, so we fall back to:
+		#   1. cashback_offer_item (closest "generic CRED item")
+		#   2. first erp_item in ecom_item_table
+		# If neither is set, raise per-group below.
+		default_refund_item = None
+		if getattr(cred_mapping, "cashback_offer_item", None):
+			default_refund_item = cred_mapping.cashback_offer_item
+		elif cred_mapping.ecom_item_table:
+			first_map = next(
+				(m.erp_item for m in cred_mapping.ecom_item_table if m.erp_item),
+				None,
+			)
+			default_refund_item = first_map
+
+		for ee_invoice_no, refunds in refund_groups.items():
+			cn_name = f"{ee_invoice_no}RT"
+			if frappe.db.exists("Sales Invoice", {"name": cn_name, "docstatus": 1}):
+				existing_refund_count += 1
+				continue
+			try:
+				if not default_refund_item:
+					raise Exception(
+						"Set CRED refund item on Ecommerce Mapping "
+						"(cashback_offer_item or first erp_item in ecom_item_table)."
+					)
+
+				# Earliest refund date in the group becomes posting datetime.
+				refund_dates = [getdate(r.refund_date) for r in refunds if r.refund_date]
+				if not refund_dates:
+					raise Exception("No refund_date on any refund row in this group.")
+				first_dt = min(refund_dates)
+				posting_dt = datetime.combine(first_dt, datetime.min.time())
+
+				# Inherit GSTIN / place-of-supply / company_address / location
+				# from the parent SI for consistency.
+				parent_si = frappe.get_doc("Sales Invoice", ee_invoice_no)
+				ecommerce_gstin = parent_si.ecommerce_gstin
+				place_of_supply = parent_si.place_of_supply
+				company_address = parent_si.company_address
+				location = parent_si.location
+
+				cn = _amazon_init_si_header(
+					customer=customer,
+					posting_dt=posting_dt,
+					ecom_name=cn_name,
+					is_return=True,
+					is_debit_note=False,
+					return_against=ee_invoice_no,
+					ecommerce_operator=self.ecommerce_mapping,
+					amazon_type="",
+					ecommerce_gstin=ecommerce_gstin,
+					update_stock=1,
+					draft_doc=None,
+				)
+				cn.location = location
+				cn.set_warehouse = cred_mapping.default_company_warehouse
+				cn.company_address = company_address
+				cn.place_of_supply = place_of_supply
+
+				hsn_code = frappe.db.get_value("Item", default_refund_item, "gst_hsn_code")
+
+				for r in refunds:
+					gmv = flt(r.gmv)
+					gst_rate = flt(r.gst_rate)  # already normalized to percent by T2
+					tax_amt_total = gmv * gst_rate / 100.0
+					cust_state = (r.customer_state or "").strip().upper()
+					wh_state = (r.warehouse_state or "").strip().upper()
+					intra = bool(cust_state) and cust_state == wh_state
+
+					if intra:
+						half_rate = gst_rate / 2.0
+						half_amt = tax_amt_total / 2.0
+						row_taxes = [
+							("CGST", half_rate, half_amt, "Output Tax CGST - KGOPL"),
+							("SGST", half_rate, half_amt, "Output Tax SGST - KGOPL"),
+							("IGST", 0, 0, "Output Tax IGST - KGOPL"),
+						]
+					else:
+						row_taxes = [
+							("CGST", 0, 0, "Output Tax CGST - KGOPL"),
+							("SGST", 0, 0, "Output Tax SGST - KGOPL"),
+							("IGST", gst_rate, tax_amt_total, "Output Tax IGST - KGOPL"),
+						]
+
+					_amazon_append_si_line(
+						cn,
+						item_code=default_refund_item,
+						qty=-1,
+						rate=gmv,
+						hsn_code=hsn_code,
+						description=f"CRED refund - {r.cred_order_item_id} ({r.order_status})",
+						warehouse=cred_mapping.default_company_warehouse,
+						income_account=cred_mapping.income_account,
+						custom_ecom_item_id=r.cred_order_item_id,
+						taxes=row_taxes,
+					)
+
+				_amazon_save_and_submit(
+					cn,
+					mode_of_payment=cred_mapping.mode_of_payment,
+					due_date=getdate(today()),
+				)
+				success_refunds += 1
+				frappe.db.commit()
+
+			except Exception as e:
+				frappe.db.rollback()
+				for r in refunds:
+					errors.append({
+						"idx": r.idx,
+						"invoice_id": ee_invoice_no,
+						"event": "Refund",
+						"message": f"CN creation failed: {e}",
+					})
+
 		# --- Final status + progress ---
 		self._persist_errors(errors)
-		if errors and success_invoices:
+		total_success = success_invoices + success_refunds
+		if errors and total_success:
 			self.status = "Partial Success"
-		elif errors and not success_invoices:
+		elif errors and not total_success:
 			self.status = "Error"
 		else:
 			self.status = "Success"
 
+		self._set_import_summary(
+			created=total_success,
+			existing=existing_count + existing_refund_count,
+			failed=len(errors),
+			label="CRED",
+		)
 		self._update_import_status()
 
 		self._publish_progress(
 			current=total_invoices,
 			total=total_invoices,
 			progress=100,
-			message="CRED Import Completed",
+			message=f"CRED Import Completed ({success_invoices} sales + {success_refunds} refunds)",
 			phase="cred",
 		)
 
-		return {"status": self.status, "errors": errors, "success_invoices": success_invoices}
+		return {
+			"status": self.status,
+			"errors": errors,
+			"success_invoices": success_invoices,
+			"success_refunds": success_refunds,
+		}
 
 
 	def create_jio_mart(self):
