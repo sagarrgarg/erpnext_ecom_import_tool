@@ -2351,42 +2351,30 @@ class EcommerceBillImport(Document):
 						# ERPNext expects `rate` to be per-unit.
 						rate = (flt(row.taxable_value) / qty) if qty else 0
 
-						doc.append("items", {
-							"item_code": item_code,
-							"qty": qty,
-							"rate": rate,
-							"price_list_rate": rate,
-							"warehouse": wh.erp_warehouse
-						})
+						tax_tuples = [
+							("CGST", flt(row.cgst_rate), flt(row.cgst_amount),
+							 "Output Tax CGST - KGOPL"),
+							("SGST", flt(row.sgst_rate) + flt(row.utgst_rate),
+							 flt(row.sgst_amount) + flt(row.utgst_amount),
+							 "Output Tax SGST - KGOPL"),
+							("IGST", flt(row.igst_rate), flt(row.igst_amount),
+							 "Output Tax IGST - KGOPL"),
+						] if is_taxable else []
 
-						if is_taxable:
-							for tax_type, rate, amount, acc_head in [
-								("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Output Tax CGST - KGOPL"),
-								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), flt(row.sgst_amount) + flt(row.utgst_amount), "Output Tax SGST - KGOPL"),
-								("IGST", flt(row.igst_rate), flt(row.igst_amount), "Output Tax IGST - KGOPL")
-							]:
-								if amount:
-									rate = normalize_tax_rate(rate)
-									existing_tax = next((t for t in doc.taxes if t.account_head == acc_head), None)
-									if existing_tax:
-										existing_tax.tax_amount += amount
-										existing_tax.rate = rate
-									else:
-										doc.append("taxes", {
-											"charge_type": "On Net Total",
-											"account_head": acc_head,
-											"rate": rate,
-											"tax_amount": amount,
-											"description": tax_type
-										})
+						_amazon_append_si_line(
+							doc,
+							item_code=item_code,
+							qty=qty,
+							rate=rate,
+							hsn_code=frappe.db.get_value("Item", item_code, "gst_hsn_code") or "",
+							description="",
+							warehouse=wh.erp_warehouse,
+							income_account="",
+							custom_ecom_item_id="",
+							taxes=tax_tuples,
+						)
 
-					doc.save(ignore_permissions=True)
-					for j in doc.items:
-						j.item_tax_template = ""
-						j.item_tax_rate = frappe._dict()
-
-					doc.save(ignore_permissions=True)
-					doc.submit()
+					_amazon_save_and_submit(doc, mode_of_payment=None)
 					frappe.db.commit()
 					success_count += len(group_rows)
 					frappe.msgprint(f"{doc.doctype} {doc.name} created for Invoice No {invoice_no}")
@@ -2444,43 +2432,30 @@ class EcommerceBillImport(Document):
 						qty = flt(row.quantity)
 						rate = (flt(row.taxable_value) / qty) if qty else 0
 
-						pi_doc.append("items", {
-							"item_code": item_code,
-							"qty": qty,
-							"rate": rate,
-							"price_list_rate": rate,
-							"warehouse": warehouse,
-						})
+						tax_tuples = [
+							("CGST", flt(row.cgst_rate), flt(row.cgst_amount),
+							 "Input Tax CGST - KGOPL"),
+							("SGST", flt(row.sgst_rate) + flt(row.utgst_rate),
+							 flt(row.sgst_amount) + flt(row.utgst_amount),
+							 "Input Tax SGST - KGOPL"),
+							("IGST", flt(row.igst_rate), flt(row.igst_amount),
+							 "Input Tax IGST - KGOPL"),
+						] if is_taxable else []
 
-						if is_taxable:
-							for tax_type, rate, amount, acc_head in [
-								("CGST", flt(row.cgst_rate), flt(row.cgst_amount), "Input Tax CGST - KGOPL"),
-								("SGST", flt(row.sgst_rate) + flt(row.utgst_rate), flt(row.sgst_amount) + flt(row.utgst_amount), "Input Tax SGST - KGOPL"),
-								("IGST", flt(row.igst_rate), flt(row.igst_amount), "Input Tax IGST - KGOPL")
-							]:
-								if amount:
-									rate = normalize_tax_rate(rate)
-									existing_tax = next((t for t in pi_doc.taxes if t.account_head == acc_head), None)
-									if existing_tax:
-										existing_tax.tax_amount += amount
-										existing_tax.rate = rate
-									else:
-										pi_doc.append("taxes", {
-											"charge_type": "On Net Total",
-											"account_head": acc_head,
-											"rate": rate,
-											"tax_amount": amount,
-											"description": tax_type
-										})
+						_amazon_append_si_line(
+							pi_doc,
+							item_code=item_code,
+							qty=qty,
+							rate=rate,
+							hsn_code=frappe.db.get_value("Item", item_code, "gst_hsn_code") or "",
+							description="",
+							warehouse=warehouse,
+							income_account="",
+							custom_ecom_item_id="",
+							taxes=tax_tuples,
+						)
 
-					pi_doc.save(ignore_permissions=True)
-					# for j in pi_doc.items:
-					# 	j.item_tax_template = ""
-					# 	j.item_tax_rate = frappe._dict()
-
-					# pi_doc.save(ignore_permissions=True)
-					# print("####################################666",)
-					pi_doc.submit()
+					_amazon_save_and_submit(pi_doc, mode_of_payment=None)
 					frappe.db.commit()
 
 			except Exception as e:
