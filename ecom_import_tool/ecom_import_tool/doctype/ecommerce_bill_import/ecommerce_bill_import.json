@@ -22,6 +22,8 @@
   "cred_attach",
   "cred",
   "cred_items",
+  "cred_refund_attach",
+  "cred_refund",
   "flipkart_attach",
   "flipkart_items",
   "flipkart_cashback",
@@ -198,6 +200,19 @@
    "hidden": 1,
    "label": "Cred  Items",
    "options": "Cred Items"
+  },
+  {
+   "fieldname": "cred_refund_attach",
+   "fieldtype": "Attach",
+   "hidden": 1,
+   "label": "CRED Refund Attach"
+  },
+  {
+   "fieldname": "cred_refund",
+   "fieldtype": "Table",
+   "hidden": 1,
+   "label": "CRED Refund",
+   "options": "CRED Refund"
   },
   {
    "fieldname": "error_json",
