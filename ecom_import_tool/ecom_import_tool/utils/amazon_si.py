@@ -132,3 +132,21 @@ def _amazon_append_si_line(si, *, item_code, qty, rate, hsn_code, description,
 				"tax_amount": tax_amount,
 				"description": tax_type,
 			})
+
+
+def _amazon_save_and_submit(si, *, mode_of_payment, due_date=None):
+	"""Save (so grand_total computes), clear item_tax_template/rate, apply POS
+	with the now-known grand_total, save again to validate POS, submit.
+
+	Returns the saved (and submitted) si.
+	"""
+	si.save(ignore_permissions=True)
+	for it in si.items:
+		it.item_tax_template = ""
+		it.item_tax_rate = frappe._dict()
+	apply_pos_payment(si, mode_of_payment)
+	if due_date:
+		si.due_date = due_date
+	si.save(ignore_permissions=True)
+	si.submit()
+	return si
