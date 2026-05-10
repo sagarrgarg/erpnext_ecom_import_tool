@@ -992,6 +992,63 @@ class EcommerceBillImport(Document):
 				if "destination_pincode" in sale_fields:
 					child_row.destination_pincode = get_cell(row, "shipping_zip_code")
 
+			# ---------------- Refund sheet (XLSX) ----------------
+			# Build suborder_no -> ee_invoice_no map from the CSV we just parsed.
+			# Note: the `Cred` child doctype only stores a single composite `order_item_id`
+			# (preferring EE Invoice No), so we build the lookup directly from the CSV df
+			# where both columns coexist per row.
+			self.cred_refund = []
+			if not self.cred_refund_attach:
+				return
+
+			suborder_to_ee_inv = {}
+			for _, row in df.iterrows():
+				sub = clean_csv_cell(get_cell(row, "suborder_no"))
+				if sub.startswith("`"):
+					sub = sub[1:]
+				ee_inv = clean_csv_cell(get_cell(row, "ee_invoice_no"))
+				if sub and ee_inv:
+					suborder_to_ee_inv[sub] = ee_inv
+
+			refund_path = resolve_file_path(self.cred_refund_attach)
+			try:
+				rdf = pd.read_excel(refund_path, sheet_name="Refund", dtype=str, keep_default_na=False)
+			except (ValueError, KeyError):
+				frappe.throw(
+					"CRED Refund XLSX is missing the 'Refund' sheet. "
+					"Re-export from CRED Mail Report and try again."
+				)
+
+			refund_col_map = {normalize_col(c): c for c in rdf.columns}
+
+			def get_refund_cell(row, key: str) -> str:
+				col = refund_col_map.get(key)
+				if not col:
+					return ""
+				return clean(row.get(col))
+
+			for _, row in rdf.iterrows():
+				sub_id = get_refund_cell(row, "cred_order_item_id")
+				if sub_id.startswith("`"):
+					sub_id = sub_id[1:]
+
+				refund_dt_raw = get_refund_cell(row, "refund_date_time")
+				refund_date = parse_export_date(refund_dt_raw) or (getdate(refund_dt_raw) if refund_dt_raw else None)
+
+				gst_rate_raw = get_refund_cell(row, "gst_rate")
+				gst_rate_val = normalize_tax_rate(flt(gst_rate_raw)) if gst_rate_raw else 0
+
+				self.append("cred_refund", {
+					"cred_order_item_id": sub_id,
+					"refund_date": refund_date,
+					"order_status": get_refund_cell(row, "order_status"),
+					"gmv": flt(get_refund_cell(row, "gmv")),
+					"gst_rate": gst_rate_val,
+					"customer_state": get_refund_cell(row, "customer_state"),
+					"warehouse_state": get_refund_cell(row, "warehouse_state"),
+					"ee_invoice_no": suborder_to_ee_inv.get(sub_id, ""),
+				})
+
 			return
 
 		# ---------------- Legacy Excel (kept for backward compatibility) ----------------
