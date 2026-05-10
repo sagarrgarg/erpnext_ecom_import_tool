@@ -28,6 +28,8 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				frm.set_df_property("cred_attach", "hidden", 1);
 				frm.set_df_property("cred", "hidden", 1);
 				frm.set_df_property("cred_items", "hidden", 1);
+				frm.set_df_property("cred_refund_attach", "hidden", 1);
+				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 0);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
 				frm.set_df_property("flipkart_items", "hidden", 1);
@@ -38,18 +40,22 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				frm.set_df_property("cred_attach", "hidden", 0);
 				frm.set_df_property("cred", "hidden", 0);
 				frm.set_df_property("cred_items", "hidden", 0);
+				frm.set_df_property("cred_refund_attach", "hidden", 0);
+				frm.set_df_property("cred_refund", "hidden", 0);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
 				frm.set_df_property("flipkart_items", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 1);
 				frm.set_df_property("jio_mart_items", "hidden", 1);
-				
+
 
 			}
 			else if(value.platform=="Flipkart"){
 				frm.set_df_property("cred_attach", "hidden", 1);
 				frm.set_df_property("cred", "hidden", 1);
 				frm.set_df_property("cred_items", "hidden", 1);
+				frm.set_df_property("cred_refund_attach", "hidden", 1);
+				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 0);
 				frm.set_df_property("flipkart_items", "hidden", 1);
@@ -62,12 +68,14 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				frm.set_df_property("cred_attach", "hidden", 1);
 				frm.set_df_property("cred", "hidden", 1);
 				frm.set_df_property("cred_items", "hidden", 1);
+				frm.set_df_property("cred_refund_attach", "hidden", 1);
+				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
 				frm.set_df_property("flipkart_items", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 0);
 				frm.set_df_property("jio_mart_items", "hidden", 0);
-				
+
 			}
 
 		})
@@ -193,6 +201,12 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 		}
 	},
 
+	cred_refund_attach: function(frm) {
+		if (frm.doc.cred_refund_attach) {
+			frm.save().then(() => frm.trigger("_load_preview"));
+		}
+	},
+
 	jio_mart_attach: function(frm) {
 		if (frm.doc.jio_mart_attach) {
 			frm.save().then(() => frm.trigger("_load_preview"));
@@ -223,6 +237,8 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				frm.set_df_property("cred_attach", "hidden", 1);
 				frm.set_df_property("cred", "hidden", 1);
 				frm.set_df_property("cred_items", "hidden", 1);
+				frm.set_df_property("cred_refund_attach", "hidden", 1);
+				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 0);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
 				frm.set_df_property("flipkart_items", "hidden", 1);
@@ -233,6 +249,8 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				frm.set_df_property("cred_attach", "hidden", 0);
 				frm.set_df_property("cred", "hidden", 0);
 				frm.set_df_property("cred_items", "hidden", 0);
+				frm.set_df_property("cred_refund_attach", "hidden", 0);
+				frm.set_df_property("cred_refund", "hidden", 0);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
 				frm.set_df_property("flipkart_items", "hidden", 1);
@@ -245,6 +263,8 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				frm.set_df_property("cred_attach", "hidden", 1);
 				frm.set_df_property("cred", "hidden", 1);
 				frm.set_df_property("cred_items", "hidden", 1);
+				frm.set_df_property("cred_refund_attach", "hidden", 1);
+				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 0);
 				frm.set_df_property("flipkart_items", "hidden", 1);
@@ -258,6 +278,8 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				frm.set_df_property("cred_attach", "hidden", 1);
 				frm.set_df_property("cred", "hidden", 1);
 				frm.set_df_property("cred_items", "hidden", 1);
+				frm.set_df_property("cred_refund_attach", "hidden", 1);
+				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
 				frm.set_df_property("flipkart_items", "hidden", 1);
