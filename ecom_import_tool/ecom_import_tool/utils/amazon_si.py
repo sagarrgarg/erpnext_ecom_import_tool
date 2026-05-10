@@ -37,26 +37,34 @@ def normalize_tax_rate(rate):
 def apply_pos_payment(si, mode_of_payment):
 	"""Mark a Sales Invoice as POS-settled 100% via the given Mode of Payment.
 
-	Must be called AFTER si.save() so si.grand_total is computed. Caller then
-	saves once more to validate the POS state.
+	Must be called AFTER si.save() so si.grand_total / si.rounded_total are
+	computed. Caller then saves once more to validate the POS state.
+
+	Behavior:
+	  - Prefer rounded_total when non-zero (it's the after-rounding amount the
+	    customer actually pays); fall back to grand_total otherwise.
+	  - flags.ignore_pos_profile = True so ERPNext's set_pos_fields() does NOT
+	    auto-fetch a default POS Profile on save (we want pos_profile blank).
 
 	Skipped (no-op) when:
 	  - mode_of_payment is empty (defensive — Ecommerce Mapping validation
 	    should prevent this, but caller might be Stock Transfer or a future path)
-	  - si.grand_total == 0 (ERPNext only requires payments when grand_total > 0)
+	  - settle_amount == 0 (ERPNext only requires payments when grand_total > 0)
 	"""
 	if not mode_of_payment:
 		return
-	if not flt(si.grand_total):
+	settle_amount = flt(si.rounded_total) or flt(si.grand_total)
+	if not settle_amount:
 		return
 	si.is_pos = 1
 	si.pos_profile = ""
+	# Block ERPNext set_pos_fields() from backfilling a default POS Profile.
+	si.flags.ignore_pos_profile = True
 	si.set("payments", [])
 	si.append("payments", {
 		"mode_of_payment": mode_of_payment,
-		# Explicit amount = grand_total. Already negative for is_return=1.
-		# ERPNext's verify_payment_amount_is_negative() requires this for returns.
-		"amount": flt(si.grand_total),
+		# Already negative for is_return=1 (verify_payment_amount_is_negative).
+		"amount": settle_amount,
 	})
 
 
