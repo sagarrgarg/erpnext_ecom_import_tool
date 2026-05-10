@@ -55,6 +55,13 @@ ecom_import_tool/
 - Purchase Receipt — `custom_inv_no` field
 - Purchase Invoice — `custom_inv_no` field
 
+## Ecommerce Mapping — `mode_of_payment` (added 2026-05-10)
+
+- `mode_of_payment` (Link → Mode of Payment, required, unique per mapping). Drives `is_pos=1` on every Amazon SI / CN / DN created from this mapping.
+- The MoP must have a Default Account configured for at least one company (validated at Ecommerce Mapping save).
+- Stock Transfer is excluded from this behavior (inter-company internal flow, no real payment movement).
+- Flipkart / CRED / JioMart will adopt the same field in a follow-up PR; helpers in `ecom_import_tool/utils/amazon_si.py` already accept platform-agnostic params.
+
 ## Bench Commands
 
 ```bash
