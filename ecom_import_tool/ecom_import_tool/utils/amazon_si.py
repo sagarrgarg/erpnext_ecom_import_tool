@@ -46,3 +46,42 @@ def apply_pos_payment(si, mode_of_payment):
 		# ERPNext's verify_payment_amount_is_negative() requires this for returns.
 		"amount": flt(si.grand_total),
 	})
+
+
+def _amazon_init_si_header(*, customer, posting_dt, ecom_name, is_return,
+                           is_debit_note, return_against, ecommerce_operator,
+                           amazon_type, ecommerce_gstin, update_stock,
+                           draft_doc=None):
+	"""Build (or reuse a draft) Sales Invoice header.
+
+	Returns the unsaved Sales Invoice doc with header fields set. Caller is
+	responsible for appending items / taxes (via _amazon_append_si_line) and
+	mutating header-level state from per-row data (place_of_supply, location,
+	set_warehouse, company_address) inside the per-row loop.
+	"""
+	if draft_doc:
+		si = draft_doc
+		si.is_return = 1 if is_return else 0
+		si.is_debit_note = 1 if is_debit_note else 0
+		si.ecommerce_gstin = ecommerce_gstin
+		return si
+
+	si = frappe.new_doc("Sales Invoice")
+	si.flags.ignore_pricing_rule = 1
+	si.customer = customer
+	si.set_posting_time = 1
+	si.posting_date = posting_dt.date()
+	si.posting_time = posting_dt.time()
+	si.custom_ecommerce_operator = ecommerce_operator
+	si.custom_ecommerce_type = amazon_type
+	si.taxes_and_charges = ""
+	si.taxes = []
+	si.update_stock = update_stock
+	si.is_return = 1 if is_return else 0
+	si.is_debit_note = 1 if is_debit_note else 0
+	if return_against:
+		si.return_against = return_against
+	si.ecommerce_gstin = ecommerce_gstin
+	if not frappe.db.exists("Sales Invoice", ecom_name):
+		si._ecom_name = ecom_name
+	return si
