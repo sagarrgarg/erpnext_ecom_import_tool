@@ -392,36 +392,40 @@ def qualify_with_fy(name, posting_date):
 	return f"{prefix}-{name_str}"
 
 
-def find_existing_amazon_si(name, posting_date, **filters):
-	"""Find existing Sales Invoice trying FY-qualified name first, falling back
-	to the legacy unprefixed name *only when the candidate's posting_date is
-	in the same fiscal year* (so re-imports of pre-prefix data match, but
-	cross-FY re-uses do not collide).
+def find_existing_amazon_doc(doctype, name, posting_date, **filters):
+	"""Find existing doc of `doctype` trying FY-qualified name first, falling
+	back to the legacy unprefixed name *only when the candidate's posting_date
+	is in the same fiscal year* (so re-imports of pre-prefix data still match,
+	but cross-FY re-uses do not collide).
 
 	Returns the actual stored name found, or None.
 	"""
 	qualified = qualify_with_fy(name, posting_date)
 
-	found = frappe.db.get_value("Sales Invoice", {"name": qualified, **filters}, "name")
+	found = frappe.db.get_value(doctype, {"name": qualified, **filters}, "name")
 	if found:
 		return found
 
 	if qualified != name and name:
 		candidate = frappe.db.get_value(
-			"Sales Invoice",
+			doctype,
 			{"name": name, **filters},
 			["name", "posting_date"],
 			as_dict=True,
 		)
 		if candidate:
 			# Same FY check: legacy match only counts if its posting_date is in the
-			# same Fiscal Year as the row we're importing. Without this check, a
-			# legacy 'DEL5-1' from FY 25-26 would wrongly absorb a new FY 26-27 import.
+			# same Fiscal Year as the row we're importing.
 			lookup_end = _fiscal_year_end(posting_date)
 			candidate_end = _fiscal_year_end(candidate.posting_date)
 			if lookup_end and candidate_end and lookup_end == candidate_end:
 				return candidate.name
 	return None
+
+
+def find_existing_amazon_si(name, posting_date, **filters):
+	"""Sales Invoice convenience wrapper around find_existing_amazon_doc."""
+	return find_existing_amazon_doc("Sales Invoice", name, posting_date, **filters)
 
 
 def resolve_flipkart_pos(state_value, seller_gstin, igst_amt=0, cgst_amt=0, sgst_amt=0):
@@ -1175,6 +1179,8 @@ class EcommerceBillImport(Document):
 		error_names=[]
 		errors = []
 		success_count = 0
+		existing_shipment_count = 0
+		existing_refund_count = 0
 		invoice_groups = {}
 
 		# Group rows by Invoice
@@ -1260,6 +1266,7 @@ class EcommerceBillImport(Document):
 				# If the sales invoice is already submitted, don't recreate it. Refunds (credit notes)
 				# are handled below independently.
 				if shipment_items and existing_si:
+					existing_shipment_count += len(shipment_items)
 					shipment_items = []
 				
 				if shipment_items:
@@ -1451,6 +1458,7 @@ class EcommerceBillImport(Document):
 						# Skip if this credit note already exists (idempotent re-runs)
 						existing_return = find_existing_amazon_si(credit_note_no, _cn_posting_date, docstatus=1)
 						if existing_return:
+							existing_refund_count += len(refund_items)
 							percent = int((count / total_invoices) * 100) if total_invoices else 100
 							self._publish_progress(
 								current=count,
@@ -1663,18 +1671,52 @@ class EcommerceBillImport(Document):
 			frappe.db.commit()
 
 		# -------- Final Summary --------
+		existing_total = existing_shipment_count + existing_refund_count
+		summary_extra = f" ({existing_total} already existed, skipped)" if existing_total else ""
 		if errors:
 			self.status = "Partial Success" if success_count else "Error"
 			indicator = "orange" if success_count else "red"
-			frappe.msgprint(f"{success_count} items processed, {len(errors)} failed. See error table below for details.", indicator=indicator, alert=True)
+			frappe.msgprint(
+				f"{success_count} items processed{summary_extra}, {len(errors)} failed. "
+				"See error table below for details.",
+				indicator=indicator,
+				alert=True,
+			)
 		else:
 			self.error_html = ""
-			self.status = "Success"
-			frappe.msgprint(f"All {success_count} items processed successfully!", indicator="green")
+			if success_count == 0 and existing_total == 0:
+				self.status = "Error"
+				rows_in_groups = sum(len(v) for v in invoice_groups.values())
+				diagnosis = (
+					f"No invoices were created. {len(invoice_groups)} invoice group(s) "
+					f"covering {rows_in_groups} row(s) parsed from the file, but none "
+					f"produced a sales/refund invoice. Likely causes: every row had a "
+					f"blank Invoice Number, or every row's Transaction Type was 'Cancel'. "
+					f"Check the input CSV."
+				)
+				errors.append({
+					"idx": "",
+					"invoice_id": "(no rows processed)",
+					"event": "Diagnosis",
+					"message": diagnosis,
+				})
+				frappe.msgprint(diagnosis, indicator="red")
+			elif success_count == 0 and existing_total > 0:
+				self.status = "Success"
+				frappe.msgprint(
+					f"Nothing new created. All {existing_total} items already exist as submitted invoices.",
+					indicator="blue",
+				)
+			else:
+				self.status = "Success"
+				frappe.msgprint(
+					f"All {success_count} items processed successfully!{summary_extra}",
+					indicator="green",
+				)
 
 		self._set_import_summary(
 			created=success_count,
-			existing=0,
+			existing=existing_total,
 			failed=len(errors),
 			label="Amazon B2B",
 		)
@@ -2254,6 +2296,7 @@ class EcommerceBillImport(Document):
 		customer = ecommerce_mapping.internal_company_customer
 		errors = []
 		success_count = 0
+		existing_count = 0
 		invoice_groups = {}
 
 		# Group rows by invoice number
@@ -2284,22 +2327,28 @@ class EcommerceBillImport(Document):
 				doctype = "Sales Invoice" if is_taxable else "Delivery Note"
 				doctype_m = "Purchase Invoice" if is_taxable else "Purchase Receipt"
 
-				existing_name = frappe.db.get_value(doctype, {
-					"name": invoice_no,
-					"is_return": 0,
-					"docstatus": ["!=", 2]
-				}, "name")
+				# Amazon reuses invoice numbers across fiscal years; FY-qualify both
+				# the inter-company SI/DN and PI/PR names so cross-FY re-uses don't
+				# collide. is_return=0 filter retained for backward compat.
+				_inv_dt = parse_export_datetime(group_rows[0][1].get("invoice_date"))
+				_inv_posting_date = _inv_dt.date() if _inv_dt else None
+				qualified_invoice_no = qualify_with_fy(invoice_no, _inv_posting_date)
 
-				existing_name_purchase = frappe.db.get_value(doctype_m, {
-					"name": invoice_no,
-					"is_return": 0,
-					"docstatus": ["!=", 2]
-				}, "name")
+				existing_name = find_existing_amazon_doc(
+					doctype, invoice_no, _inv_posting_date,
+					is_return=0, docstatus=["!=", 2],
+				)
+				existing_name_purchase = find_existing_amazon_doc(
+					doctype_m, invoice_no, _inv_posting_date,
+					is_return=0, docstatus=["!=", 2],
+				)
 
 				if existing_name:
 					existing_doc = frappe.get_doc(doctype, existing_name)
 					if existing_doc.docstatus == 0:
 						existing_doc.submit()
+					else:
+						existing_count += len(group_rows)
 				if existing_name_purchase:
 					existing_doc_pur = frappe.get_doc(doctype_m, existing_name_purchase)
 					if existing_doc_pur.docstatus == 0:
@@ -2323,7 +2372,8 @@ class EcommerceBillImport(Document):
 					doc.taxes = [] if is_taxable else None
 					doc.update_stock = 1 if is_taxable else None
 					doc.set_warehouse = "" if not is_taxable else None
-					doc._ecom_name = invoice_no
+					if not frappe.db.exists(doctype, qualified_invoice_no):
+						doc._ecom_name = qualified_invoice_no
 					doc.items = []
 
 					for idx, row in group_rows:
@@ -2354,6 +2404,7 @@ class EcommerceBillImport(Document):
 							"item_code": item_code,
 							"qty": qty,
 							"rate": rate,
+							"price_list_rate": rate,
 							"warehouse": wh.erp_warehouse
 						})
 
@@ -2405,9 +2456,11 @@ class EcommerceBillImport(Document):
 					pi_doc.customer = customer
 					pi_doc.custom_ecommerce_operator = self.ecommerce_mapping
 					pi_doc.custom_ecommerce_type = self.amazon_type
-					pi_doc._ecom_name = invoice_no
+					_pi_doctype = "Purchase Invoice" if is_taxable else "Purchase Receipt"
+					if not frappe.db.exists(_pi_doctype, qualified_invoice_no):
+						pi_doc._ecom_name = qualified_invoice_no
 					if is_taxable:
-						pi_doc.bill_no = invoice_no
+						pi_doc.bill_no = qualified_invoice_no
 					warehouse = None
 					location = None
 					com_address = None
@@ -2444,6 +2497,7 @@ class EcommerceBillImport(Document):
 							"item_code": item_code,
 							"qty": qty,
 							"rate": rate,
+							"price_list_rate": rate,
 							"warehouse": warehouse,
 						})
 
@@ -2498,8 +2552,53 @@ class EcommerceBillImport(Document):
 			frappe.db.commit()
 
 		# -------- Final status update --------
+		summary_extra = f" ({existing_count} already existed, skipped)" if existing_count else ""
+		if errors:
+			self.status = "Partial Success" if success_count else "Error"
+			indicator = "orange" if success_count else "red"
+			frappe.msgprint(
+				f"{success_count} items processed{summary_extra}, {len(errors)} failed. "
+				"See error table below for details.",
+				indicator=indicator,
+				alert=True,
+			)
+		else:
+			if success_count == 0 and existing_count == 0:
+				self.status = "Error"
+				rows_in_groups = sum(len(v) for v in invoice_groups.values())
+				diagnosis = (
+					f"No documents were created. {len(invoice_groups)} invoice group(s) "
+					f"covering {rows_in_groups} row(s) parsed from the file, but none "
+					f"produced an inter-company SI/DN or PI/PR. Check Invoice Number "
+					f"and Transaction Type columns."
+				)
+				errors.append({
+					"idx": "",
+					"invoice_id": "(no rows processed)",
+					"event": "Diagnosis",
+					"message": diagnosis,
+				})
+				frappe.msgprint(diagnosis, indicator="red")
+			elif success_count == 0 and existing_count > 0:
+				self.status = "Success"
+				frappe.msgprint(
+					f"Nothing new created. All {existing_count} items already exist as submitted documents.",
+					indicator="blue",
+				)
+			else:
+				self.status = "Success"
+				frappe.msgprint(
+					f"All {success_count} items processed successfully!{summary_extra}",
+					indicator="green",
+				)
+
+		self._set_import_summary(
+			created=success_count,
+			existing=existing_count,
+			failed=len(errors),
+			label="Amazon Stock Transfer",
+		)
 		self._persist_errors(errors)
-		self.status = "Partial Success" if errors and success_count else "Error" if errors else "Success"
 		self._update_import_status()
 
 		# 🔹 Final realtime update
