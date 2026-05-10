@@ -121,10 +121,10 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				const rowClass = isDuplicate ? `duplicate-error-${uniqueId}` : `other-error-${uniqueId}`;
 
 				html += `<tr class="${rowClass}">
-					<td>${row.idx ?? ''}</td>
-					<td>${row.invoice_id}</td>
-					<td>${row.event}</td>
-					<td style="color:red;">${frappe.utils.escape_html(row.message)}</td>
+					<td>${frappe.utils.escape_html(String(row.idx ?? ''))}</td>
+					<td>${frappe.utils.escape_html(String(row.invoice_id ?? ''))}</td>
+					<td>${frappe.utils.escape_html(String(row.event ?? ''))}</td>
+					<td style="color:red;">${frappe.utils.escape_html(String(row.message ?? ''))}</td>
 				</tr>`;
 			});
 

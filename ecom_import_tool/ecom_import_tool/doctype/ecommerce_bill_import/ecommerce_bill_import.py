@@ -23,9 +23,17 @@ def resolve_file_path(file_url):
 		frappe.throw("No file attached.")
 	filename = file_url.split("/files/")[-1]
 	if "/private/files/" in file_url:
-		path = frappe.get_site_path("private", "files", filename)
+		base = frappe.get_site_path("private", "files")
 	else:
-		path = frappe.get_site_path("public", "files", filename)
+		base = frappe.get_site_path("public", "files")
+	# Reject anything that would escape the files dir (path-traversal hardening).
+	# `..` segments and absolute filenames are not legitimate Frappe attachments.
+	if ".." in filename.replace("\\", "/").split("/") or filename.startswith(("/", "\\")):
+		frappe.throw(f"Invalid file path: {file_url}")
+	path = os.path.normpath(os.path.join(base, filename))
+	abs_base = os.path.abspath(base)
+	if not os.path.abspath(path).startswith(abs_base + os.sep):
+		frappe.throw(f"File path resolves outside the files directory: {file_url}")
 	if not os.path.exists(path):
 		frappe.throw(f"File not found: {path}")
 	return path
@@ -1357,7 +1365,8 @@ class EcommerceBillImport(Document):
 											raise Exception(f"State name Is Wrong Please Check")
 										si.place_of_supply=state_code_dict.get(str(state.lower()))
 
-								_b2b_rate = flt(child_row.tax_exclusive_gross) / flt(child_row.quantity)
+								_b2b_qty = flt(child_row.quantity)
+								_b2b_rate = (flt(child_row.tax_exclusive_gross) / _b2b_qty) if _b2b_qty else 0
 								si.append("items", {
 									"item_code": itemcode,
 									"qty": flt(child_row.quantity),
@@ -1784,8 +1793,8 @@ class EcommerceBillImport(Document):
 				_inv_posting_date = _inv_dt.date() if _inv_dt else None
 				qualified_invoice_no = qualify_with_fy(invoice_no, _inv_posting_date)
 
-				existing_si_draft = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=0)
-				existing_si = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=1)
+				existing_si_draft = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=0, is_return=0)
+				existing_si = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=1, is_return=0)
 				amazon = frappe.get_doc("Ecommerce Mapping", {"platform": "Amazon"})
 				warehouse_mapping_missing = False
 				# If the sales invoice is already submitted, don't recreate it. Refunds (credit notes)
@@ -1886,7 +1895,8 @@ class EcommerceBillImport(Document):
 
 							# ---- Append Item ----
 							hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
-							_b2c_rate = flt(child_row.tax_exclusive_gross) / flt(child_row.quantity)
+							_b2c_qty = flt(child_row.quantity)
+							_b2c_rate = (flt(child_row.tax_exclusive_gross) / _b2c_qty) if _b2c_qty else 0
 							si.append("items", {
 								"item_code": itemcode,
 								"qty": flt(child_row.quantity),
