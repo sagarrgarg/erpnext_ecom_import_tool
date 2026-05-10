@@ -26,55 +26,34 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 		frappe.model.get_value('Ecommerce Mapping', {'name': frm.doc.ecommerce_mapping}, 'platform', function(value) {
 			if(value.platform=="Amazon"){
 				frm.set_df_property("cred_attach", "hidden", 1);
-				frm.set_df_property("cred", "hidden", 1);
-				frm.set_df_property("cred_items", "hidden", 1);
 				frm.set_df_property("cred_refund_attach", "hidden", 1);
-				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 0);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
-				frm.set_df_property("flipkart_items", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 1);
-				frm.set_df_property("jio_mart_items", "hidden", 1);
 			}
 			else if(value.platform=="CRED"){
 				frm.set_df_property("cred_attach", "hidden", 0);
-				frm.set_df_property("cred", "hidden", 0);
-				frm.set_df_property("cred_items", "hidden", 0);
 				frm.set_df_property("cred_refund_attach", "hidden", 0);
-				frm.set_df_property("cred_refund", "hidden", 0);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
-				frm.set_df_property("flipkart_items", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 1);
-				frm.set_df_property("jio_mart_items", "hidden", 1);
 
 
 			}
 			else if(value.platform=="Flipkart"){
 				frm.set_df_property("cred_attach", "hidden", 1);
-				frm.set_df_property("cred", "hidden", 1);
-				frm.set_df_property("cred_items", "hidden", 1);
 				frm.set_df_property("cred_refund_attach", "hidden", 1);
-				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 0);
-				frm.set_df_property("flipkart_items", "hidden", 1);
-				frm.set_df_property("flipkart_cashback", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 1);
-				frm.set_df_property("jio_mart_items", "hidden", 1);
 
 			}
 			else if(value.platform=="Jiomart"){
 				frm.set_df_property("cred_attach", "hidden", 1);
-				frm.set_df_property("cred", "hidden", 1);
-				frm.set_df_property("cred_items", "hidden", 1);
 				frm.set_df_property("cred_refund_attach", "hidden", 1);
-				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
-				frm.set_df_property("flipkart_items", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 0);
-				frm.set_df_property("jio_mart_items", "hidden", 0);
 
 			}
 
@@ -235,56 +214,35 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 		frappe.model.get_value('Ecommerce Mapping', {'name': frm.doc.ecommerce_mapping}, 'platform', function(value) {
 			if(value.platform=="Amazon"){
 				frm.set_df_property("cred_attach", "hidden", 1);
-				frm.set_df_property("cred", "hidden", 1);
-				frm.set_df_property("cred_items", "hidden", 1);
 				frm.set_df_property("cred_refund_attach", "hidden", 1);
-				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 0);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
-				frm.set_df_property("flipkart_items", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 1);
-				frm.set_df_property("jio_mart_items", "hidden", 1);
 			}
 			else if(value.platform=="CRED"){
 				frm.set_df_property("cred_attach", "hidden", 0);
-				frm.set_df_property("cred", "hidden", 0);
-				frm.set_df_property("cred_items", "hidden", 0);
 				frm.set_df_property("cred_refund_attach", "hidden", 0);
-				frm.set_df_property("cred_refund", "hidden", 0);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
-				frm.set_df_property("flipkart_items", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 1);
-				frm.set_df_property("jio_mart_items", "hidden", 1);
 				frm.set_value("amazon_type","")
 				frm.refresh_field("amazon_type")
 			}
 			else if(value.platform=="Flipkart"){
 				frm.set_df_property("cred_attach", "hidden", 1);
-				frm.set_df_property("cred", "hidden", 1);
-				frm.set_df_property("cred_items", "hidden", 1);
 				frm.set_df_property("cred_refund_attach", "hidden", 1);
-				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 0);
-				frm.set_df_property("flipkart_items", "hidden", 1);
-				frm.set_df_property("flipkart_cashback", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 1);
-				frm.set_df_property("jio_mart_items", "hidden", 1);
 				frm.set_value("amazon_type","")
 				frm.refresh_field("amazon_type")
 			}
 			else if(value.platform=="Jiomart"){
 				frm.set_df_property("cred_attach", "hidden", 1);
-				frm.set_df_property("cred", "hidden", 1);
-				frm.set_df_property("cred_items", "hidden", 1);
 				frm.set_df_property("cred_refund_attach", "hidden", 1);
-				frm.set_df_property("cred_refund", "hidden", 1);
 				frm.set_df_property("amazon_type", "hidden", 1);
 				frm.set_df_property("flipkart_attach", "hidden", 1);
-				frm.set_df_property("flipkart_items", "hidden", 1);
 				frm.set_df_property("jio_mart_attach", "hidden", 0);
-				frm.set_df_property("jio_mart_items", "hidden", 0);
 				frm.set_value("amazon_type","")
 				frm.refresh_field("amazon_type")
 			}
