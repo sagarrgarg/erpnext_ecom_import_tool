@@ -59,7 +59,7 @@ ecom_import_tool/
 
 - `mode_of_payment` (Link → Mode of Payment, required, unique per mapping). Drives `is_pos=1` on every SI / CN created from this mapping (Amazon B2B + B2C + Flipkart sales/returns + CRED sales/refunds).
 - The MoP must have a Default Account configured for at least one company (validated at Ecommerce Mapping save).
-- Stock Transfer is excluded from this behavior (inter-company internal flow, no real payment movement).
+- Stock Transfer (Amazon SI/DN + PI/PR pair) uses the shared helpers but passes `mode_of_payment=None` — inter-company internal flow, no real payment movement, no POS row.
 - JioMart will adopt the same field in a follow-up port; helpers in `ecom_import_tool/utils/amazon_si.py` already accept platform-agnostic params.
 
 ## CRED — Refund handling (added 2026-05-10)
