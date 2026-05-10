@@ -85,3 +85,50 @@ def _amazon_init_si_header(*, customer, posting_dt, ecom_name, is_return,
 	if not frappe.db.exists("Sales Invoice", ecom_name):
 		si._ecom_name = ecom_name
 	return si
+
+
+def _amazon_append_si_line(si, *, item_code, qty, rate, hsn_code, description,
+                           warehouse, income_account, custom_ecom_item_id,
+                           taxes, is_free_item=False, margin_amount=0,
+                           tax_rate_scalar=None):
+	"""Append one Sales Invoice item row + roll up taxes onto si.taxes.
+
+	`taxes` is a list of `(tax_type, rate, amount, account_head)` tuples.
+	Tax rows with amount==0 are skipped. Multiple lines targeting the same
+	`account_head` accumulate into a single si.taxes row.
+	"""
+	item_row = {
+		"item_code": item_code,
+		"qty": qty,
+		"rate": rate,
+		"price_list_rate": rate,
+		"gst_hsn_code": hsn_code,
+		"description": description,
+		"warehouse": warehouse,
+		"income_account": income_account,
+		"custom_ecom_item_id": custom_ecom_item_id,
+	}
+	if tax_rate_scalar is not None:
+		item_row["tax_rate"] = tax_rate_scalar
+	if margin_amount:
+		item_row["margin_type"] = "Amount"
+		item_row["margin_rate_or_amount"] = margin_amount
+	if is_free_item:
+		item_row["is_free_item"] = 1
+	si.append("items", item_row)
+
+	for tax_type, tax_rate, tax_amount, acc_head in taxes:
+		if not tax_amount:
+			continue
+		existing = next((t for t in si.taxes if t.account_head == acc_head), None)
+		if existing:
+			existing.tax_amount += tax_amount
+			existing.rate = tax_rate
+		else:
+			si.append("taxes", {
+				"charge_type": "On Net Total",
+				"account_head": acc_head,
+				"rate": tax_rate,
+				"tax_amount": tax_amount,
+				"description": tax_type,
+			})
