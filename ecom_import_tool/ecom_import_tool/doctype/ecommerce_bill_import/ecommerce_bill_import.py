@@ -1286,27 +1286,24 @@ class EcommerceBillImport(Document):
 								f"(Invoice No: {invoice_no}). Please add it in Ecommerce Mapping '{amazon.name}' -> Ecommerce GSTIN Mapping."
 							)
 
-						if existing_si_draft:
-							si = frappe.get_doc("Sales Invoice", existing_si_draft)
-						else:
-							si = frappe.new_doc("Sales Invoice")
-							si.flags.ignore_pricing_rule = 1
-							si.customer = customer
-							si.set_posting_time=1
-							# Parse the datetime and add 2 seconds
-							# invoice_datetime = datetime.strptime(str(items_data[0][1].get("invoice_date")), '%Y-%m-%d %H:%M:%S') if isinstance(items_data[0][1].get("invoice_date"), str) else items_data[0][1].get("invoice_date")
-							# invoice_datetime_plus_2 = invoice_datetime + timedelta(seconds=2)
-							invoice_dt = parse_export_datetime(items_data[0][1].get("invoice_date"))
-							if not invoice_dt:
-								raise Exception(f"Invalid Invoice Date: {items_data[0][1].get('invoice_date')}")
-							si.posting_date = invoice_dt.date()
-							si.posting_time = invoice_dt.time()
-							if not frappe.db.exists("Sales Invoice", qualified_invoice_no):
-								si._ecom_name = qualified_invoice_no
-							si.custom_ecommerce_operator=self.ecommerce_mapping
-							si.custom_ecommerce_type=self.amazon_type
-							si.taxes = []
-							si.update_stock = 1
+						invoice_dt = parse_export_datetime(items_data[0][1].get("invoice_date"))
+						if not invoice_dt:
+							raise Exception(f"Invalid Invoice Date: {items_data[0][1].get('invoice_date')}")
+
+						draft_doc = frappe.get_doc("Sales Invoice", existing_si_draft) if existing_si_draft else None
+						si = _amazon_init_si_header(
+							customer=customer,
+							posting_dt=invoice_dt,
+							ecom_name=qualified_invoice_no,
+							is_return=False,
+							is_debit_note=False,
+							return_against=None,
+							ecommerce_operator=self.ecommerce_mapping,
+							amazon_type=self.amazon_type,
+							ecommerce_gstin=mapped_ecommerce_gstin,
+							update_stock=1,
+							draft_doc=draft_doc,
+						)
 
 						# Always set ecommerce_gstin from mapping (required for GST reporting)
 						si.ecommerce_gstin = mapped_ecommerce_gstin
@@ -1353,7 +1350,6 @@ class EcommerceBillImport(Document):
 
 								si.company_address = com_address
 								si.ecommerce_gstin = mapped_ecommerce_gstin
-								hsn_code=frappe.db.get_value("Item",itemcode,"gst_hsn_code")
 								if status!="Active":
 									if child_row.ship_to_state:
 										state=child_row.ship_to_state
@@ -1362,45 +1358,35 @@ class EcommerceBillImport(Document):
 											raise Exception(f"State name Is Wrong Please Check")
 										si.place_of_supply=state_code_dict.get(str(state.lower()))
 
-								_b2b_qty = flt(child_row.quantity)
-								_b2b_rate = (flt(child_row.tax_exclusive_gross) / _b2b_qty) if _b2b_qty else 0
-								si.append("items", {
-									"item_code": itemcode,
-									"qty": flt(child_row.quantity),
-									"rate": _b2b_rate,
-									"price_list_rate": _b2b_rate,
-									"description": child_row.item_description,
-									"warehouse": warehouse,
-									"gst_hsn_code":hsn_code,
-									"tax_rate": flt(child_row.total_tax_amount),
-									"margin_type": "Amount" if flt(child_row.item_promo_discount) > 0 else None,
-									"margin_rate_or_amount": flt(child_row.item_promo_discount),
-									"income_account": amazon.income_account,
-									"is_free_item": 1 if str(child_row.transaction_type) == "FreeReplacement" else 0,
-									"custom_ecom_item_id": shipment_item_id,
-								})
-								if shipment_item_id:
-									existing_item_ids.add(shipment_item_id)
+								qty = flt(child_row.quantity)
+								rate = (flt(child_row.tax_exclusive_gross) / qty) if qty else 0
+								hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
+
+								_amazon_append_si_line(
+									si,
+									item_code=itemcode,
+									qty=qty,
+									rate=rate,
+									hsn_code=hsn_code,
+									description=child_row.item_description,
+									warehouse=warehouse,
+									income_account=amazon.income_account,
+									custom_ecom_item_id=child_row.shipment_item_id,
+									is_free_item=(str(child_row.transaction_type) == "FreeReplacement"),
+									margin_amount=flt(child_row.item_promo_discount),
+									tax_rate_scalar=flt(child_row.total_tax_amount),
+									taxes=[
+										("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
+										("SGST",
+										 flt(child_row.sgst_rate) + flt(child_row.utgst_rate),
+										 flt(child_row.sgst_tax) + flt(child_row.utgst_tax),
+										 "Output Tax SGST - KGOPL"),
+										("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), "Output Tax IGST - KGOPL"),
+									],
+								)
+								if child_row.shipment_item_id:
+									existing_item_ids.add(child_row.shipment_item_id)
 								items_append.append(itemcode)
-								for tax_type,rate, amount, acc_head in [
-									("CGST", flt(child_row.cgst_rate),flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
-									("SGST",flt(child_row.sgst_rate)+flt(child_row.utgst_rate), flt(child_row.sgst_tax)+flt(child_row.utgst_tax), "Output Tax SGST - KGOPL"),
-									("IGST", flt(child_row.igst_rate),flt(child_row.igst_tax) ,"Output Tax IGST - KGOPL")
-									]:
-										if amount:
-											rate = normalize_tax_rate(rate)
-											existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
-											if existing_tax:
-												existing_tax.tax_amount += amount
-												existing_tax.rate = rate
-											else:
-												si.append("taxes", {
-													"charge_type": "On Net Total",
-													"account_head": acc_head,
-													"rate": rate,
-													"tax_amount": amount,
-													"description": tax_type
-												})
 							except Exception as item_error:
 								error_log.append(invoice_no)
 								errors.append({
@@ -1408,18 +1394,12 @@ class EcommerceBillImport(Document):
 									"invoice_id": invoice_no,
 									"message": f"Shipment item error: {str(item_error)}"
 								})
-						if len(items_append)>0 and not warehouse_mapping_missing:
-							si.save(ignore_permissions=True)
-							for j in si.items:
-								j.item_tax_template = ""
-								j.item_tax_rate = frappe._dict()
-							si.save(ignore_permissions=True)
-						if invoice_no not in error_log:
-							si.submit()
-							frappe.db.commit()
+						if items_append and not warehouse_mapping_missing and invoice_no not in error_log:
+							_amazon_save_and_submit(si, mode_of_payment=amazon.mode_of_payment, due_date=getdate(today()))
 							existing_si = si.name
 							success_count += len(shipment_items)
-						
+							frappe.db.commit()
+
 					except Exception as ship_err:
 						for idx, _ in shipment_items:
 							errors.append({
