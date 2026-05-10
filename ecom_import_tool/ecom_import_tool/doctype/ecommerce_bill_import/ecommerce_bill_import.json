@@ -165,7 +165,7 @@
    "fieldname": "cred_attach",
    "fieldtype": "Attach",
    "hidden": 1,
-   "label": "Cred Attach"
+   "label": "Monthly Invoice (CSV — with EE Invoice No)"
   },
   {
    "fieldname": "cred_items",
@@ -205,7 +205,7 @@
    "fieldname": "cred_refund_attach",
    "fieldtype": "Attach",
    "hidden": 1,
-   "label": "CRED Refund Attach"
+   "label": "Order Wise Details (XLSX — CRED Mail Report)"
   },
   {
    "fieldname": "cred_refund",
