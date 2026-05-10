@@ -17,6 +17,7 @@
   "ecom_sku_column_header",
   "ecom_item_table",
   "income_account",
+  "mode_of_payment",
   "warehouse_tab",
   "default_company_warehouse",
   "default_company_location",
@@ -128,6 +129,14 @@
    "fieldtype": "Link",
    "label": "Income Account",
    "options": "Account"
+  },
+  {
+   "fieldname": "mode_of_payment",
+   "fieldtype": "Link",
+   "label": "Mode of Payment",
+   "options": "Mode of Payment",
+   "reqd": 1,
+   "description": "Linked Mode of Payment for POS-style 100% settlement on every Sales Invoice / Credit Note created from this mapping. Must be unique per mapping; must have a default Account configured for at least one company."
   },
   {
    "fieldname": "column_break_ybgs",
