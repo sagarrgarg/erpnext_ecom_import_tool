@@ -57,10 +57,10 @@ ecom_import_tool/
 
 ## Ecommerce Mapping — `mode_of_payment` (added 2026-05-10)
 
-- `mode_of_payment` (Link → Mode of Payment, required, unique per mapping). Drives `is_pos=1` on every Amazon SI / CN / DN created from this mapping.
+- `mode_of_payment` (Link → Mode of Payment, required, unique per mapping). Drives `is_pos=1` on every SI / CN created from this mapping (Amazon B2B + B2C + Flipkart sales/returns).
 - The MoP must have a Default Account configured for at least one company (validated at Ecommerce Mapping save).
 - Stock Transfer is excluded from this behavior (inter-company internal flow, no real payment movement).
-- Flipkart / CRED / JioMart will adopt the same field in a follow-up PR; helpers in `ecom_import_tool/utils/amazon_si.py` already accept platform-agnostic params.
+- CRED / JioMart will adopt the same field in a follow-up port; helpers in `ecom_import_tool/utils/amazon_si.py` already accept platform-agnostic params.
 
 ## Bench Commands
 
