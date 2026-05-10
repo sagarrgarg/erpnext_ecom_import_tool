@@ -3320,27 +3320,26 @@ class EcommerceBillImport(Document):
 					raise Exception(f"Warehouse mapping missing for Client Location: {client_location!r}")
 
 				# --- Create or resume Sales Invoice ---
-				if draft_name:
-					si = frappe.get_doc("Sales Invoice", draft_name)
-				else:
-					si = frappe.new_doc("Sales Invoice")
-					si.flags.ignore_pricing_rule = 1
+				posting_dt = datetime.combine(invoice_dt.date(), invoice_dt.time())
+				draft_doc = frappe.get_doc("Sales Invoice", draft_name) if draft_name else None
+				si = _amazon_init_si_header(
+					customer=customer,
+					posting_dt=posting_dt,
+					ecom_name=invoice_no,
+					is_return=False,
+					is_debit_note=False,
+					return_against=None,
+					ecommerce_operator=self.ecommerce_mapping,
+					amazon_type="",
+					ecommerce_gstin=ecommerce_gstin,
+					update_stock=1,
+					draft_doc=draft_doc,
+				)
 
-				si.customer = customer
-				si.set_posting_time = 1
-				si.posting_date = invoice_dt.date()
-				si.posting_time = invoice_dt.time()
-				si.custom_ecommerce_operator = self.ecommerce_mapping
-				si.custom_ecommerce_type = ""
-				if not frappe.db.exists("Sales Invoice", invoice_no):
-					si._ecom_name = invoice_no
-
-				si.taxes_and_charges = ""
-				si.update_stock = 1
+				# CRED-specific header mutations not covered by the helper.
 				si.location = location
 				si.set_warehouse = warehouse
 				si.company_address = company_address
-				si.ecommerce_gstin = ecommerce_gstin
 				si.place_of_supply = place_of_supply
 
 				# De-duplicate within this invoice using CRED's Suborder No / Reference Code
@@ -3350,11 +3349,7 @@ class EcommerceBillImport(Document):
 					if d.get("custom_ecom_item_id")
 				}
 
-				# --- Tax accumulation ---
-				# Accumulate taxes (Actual) so amounts match the CSV exactly.
-				tax_totals = {"cgst": 0.0, "sgst": 0.0, "igst": 0.0}
-				tax_rates_seen = set()
-
+				# --- Tax split decision (intra-state vs inter-state) ---
 				customer_state_code = (place_of_supply.split("-")[0] if place_of_supply else "")
 				seller_state_code = (str(seller_gstin)[:2] if str(seller_gstin)[:2].isdigit() else "")
 				is_intra_state = (seller_state_code and customer_state_code and seller_state_code == customer_state_code)
@@ -3386,22 +3381,6 @@ class EcommerceBillImport(Document):
 					product_name = get_cell(row, "product_name")
 					hsn_code = frappe.db.get_value("Item", item_code, "gst_hsn_code")
 
-					si.append(
-						"items",
-						{
-							"item_code": item_code,
-							"qty": qty,
-							"rate": rate,
-							"description": product_name,
-							"warehouse": warehouse,
-							"gst_hsn_code": hsn_code,
-							"income_account": cred_mapping.income_account,
-							"custom_ecom_item_id": item_id,
-						},
-					)
-					if item_id:
-						existing_item_ids.add(item_id)
-
 					# --- Tax calculation per row ---
 					row_tax_rate = normalize_tax_rate(flt(get_cell(row, "tax_rate")))
 					row_tax_amount = flt(get_cell(row, "tax"))
@@ -3410,69 +3389,49 @@ class EcommerceBillImport(Document):
 					if row_tax_amount <= 0 and row_tax_rate and taxable_total:
 						row_tax_amount = taxable_total * (row_tax_rate / 100)
 
-					if row_tax_rate:
-						tax_rates_seen.add(row_tax_rate)
+					# Split row tax into CGST/SGST or IGST tuples for the shared helper.
+					if row_tax_amount > 0 and is_intra_state:
+						half_rate = (row_tax_rate / 2) if row_tax_rate else 0
+						half_amount = row_tax_amount / 2
+						row_taxes = [
+							("CGST", half_rate, half_amount, "Output Tax CGST - KGOPL"),
+							("SGST", half_rate, half_amount, "Output Tax SGST - KGOPL"),
+							("IGST", 0, 0, "Output Tax IGST - KGOPL"),
+						]
+					elif row_tax_amount > 0:
+						row_taxes = [
+							("CGST", 0, 0, "Output Tax CGST - KGOPL"),
+							("SGST", 0, 0, "Output Tax SGST - KGOPL"),
+							("IGST", row_tax_rate, row_tax_amount, "Output Tax IGST - KGOPL"),
+						]
+					else:
+						row_taxes = []
 
-					# Split into CGST/SGST or IGST based on state codes
-					if row_tax_amount > 0:
-						if is_intra_state:
-							tax_totals["cgst"] += row_tax_amount / 2
-							tax_totals["sgst"] += row_tax_amount / 2
-						else:
-							tax_totals["igst"] += row_tax_amount
+					_amazon_append_si_line(
+						si,
+						item_code=item_code,
+						qty=qty,
+						rate=rate,
+						hsn_code=hsn_code,
+						description=product_name,
+						warehouse=warehouse,
+						income_account=cred_mapping.income_account,
+						custom_ecom_item_id=item_id,
+						taxes=row_taxes,
+					)
+					if item_id:
+						existing_item_ids.add(item_id)
 
 				# --- Check we have items ---
 				if not si.items:
 					raise Exception("No items were added for this invoice (all duplicates or invalid)")
 
-				# --- Apply taxes (On Net Total for proper item tax computation) ---
-				si.taxes = []
-
-				# Determine display rate: if single rate across invoice, use it; else 0
-				display_rate = list(tax_rates_seen)[0] if len(tax_rates_seen) == 1 else 0.0
-
-				if tax_totals["cgst"] > 0:
-					si.append(
-						"taxes",
-						{
-							"charge_type": "On Net Total",
-							"account_head": "Output Tax CGST - KGOPL",
-							"rate": (display_rate / 2) if display_rate else 0,
-							"tax_amount": tax_totals["cgst"],
-							"description": "CGST" if len(tax_rates_seen) <= 1 else "CGST (multiple rates)",
-						},
-					)
-				if tax_totals["sgst"] > 0:
-					si.append(
-						"taxes",
-						{
-							"charge_type": "On Net Total",
-							"account_head": "Output Tax SGST - KGOPL",
-							"rate": (display_rate / 2) if display_rate else 0,
-							"tax_amount": tax_totals["sgst"],
-							"description": "SGST" if len(tax_rates_seen) <= 1 else "SGST (multiple rates)",
-						},
-					)
-				if tax_totals["igst"] > 0:
-					si.append(
-						"taxes",
-						{
-							"charge_type": "On Net Total",
-							"account_head": "Output Tax IGST - KGOPL",
-							"rate": display_rate or 0,
-							"tax_amount": tax_totals["igst"],
-							"description": "IGST" if len(tax_rates_seen) <= 1 else "IGST (multiple rates)",
-						},
-					)
-
 				# --- Save + submit (deterministic per invoice group) ---
-				si.save(ignore_permissions=True)
-				for it in si.items:
-					it.item_tax_template = ""
-					it.item_tax_rate = frappe._dict()
-				si.due_date = getdate(today())
-				si.save(ignore_permissions=True)
-				si.submit()
+				_amazon_save_and_submit(
+					si,
+					mode_of_payment=cred_mapping.mode_of_payment,
+					due_date=getdate(today()),
+				)
 				frappe.db.commit()
 				success_invoices += 1
 
