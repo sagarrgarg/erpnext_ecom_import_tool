@@ -166,11 +166,16 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 			args: { dt: frm.doc.doctype, dn: frm.doc.name, method: "get_file_preview" },
 			async: true,
 			callback: function(r) {
-				var html = (r.message && r.message.message) || "";
-				if (html && frm.fields_dict.import_preview) {
-					frm.fields_dict.import_preview.$wrapper.html(html);
-				} else if (frm.fields_dict.import_preview) {
-					frm.fields_dict.import_preview.$wrapper.html("");
+				// run_doc_method returns the method's return value as r.message;
+				// in some Frappe versions it nests it under r.message.message.
+				// Handle both.
+				var html = "";
+				if (r && r.message) {
+					if (typeof r.message === "string") html = r.message;
+					else if (typeof r.message.message === "string") html = r.message.message;
+				}
+				if (frm.fields_dict.import_preview) {
+					frm.fields_dict.import_preview.$wrapper.html(html || "");
 				}
 			}
 		});
