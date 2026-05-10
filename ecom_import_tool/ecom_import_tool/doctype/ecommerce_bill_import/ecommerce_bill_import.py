@@ -648,42 +648,26 @@ class EcommerceBillImport(Document):
 			self.import_summary = ""
 
 	def _persist_errors(self, errors):
-		"""Persist errors lightweightly:
-		  - Full error list → Frappe Error Log (so the doc stays small).
-		  - First 10 errors → kept on the doc as a sample for the
-		    existing client-side renderer (mirrors Frappe Data Import).
-		  - A trailing synthetic row points to the Error Log entry so
-		    the user can jump straight to the full list.
+		"""Persist all errors directly on the doc as JSON.
+
+		The client-side `show_import_log` / error-table renderer reads from
+		`error_json` and renders the rows. Keep everything on the doc so
+		users don't have to hop to a separate Error Log.
 		"""
 		if not errors:
 			self.error_json = ""
 			self.error_html = ""
 			return
 
-		log_name = ""
 		try:
-			log = frappe.log_error(
-				title=f"Ecom Import errors: {self.name}",
-				message=json.dumps(errors, indent=2, default=str),
-			)
-			log_name = log.name if log else ""
+			self.error_json = json.dumps(errors, default=str)
 		except Exception:
-			log_name = ""
-
-		sample = list(errors[:10])
-		footer_msg = f"Full error log: {log_name}" if log_name else "See Error Log for details."
-		if len(errors) > 10:
-			footer_msg = (
-				f"... and {len(errors) - 10} more errors not shown. {footer_msg}"
-			)
-		sample.append({
-			"idx": "",
-			"invoice_id": "Error Log",
-			"event": "",
-			"message": footer_msg,
-		})
-
-		self.error_json = json.dumps(sample, default=str)
+			# Last-resort: stringify each entry so a single bad value can't
+			# blank out the whole error list.
+			safe = []
+			for e in errors:
+				safe.append({k: str(v) for k, v in (e or {}).items()})
+			self.error_json = json.dumps(safe)
 		self.error_html = ""
 
 	def show_preview(self):
@@ -1682,7 +1666,7 @@ class EcommerceBillImport(Document):
 		if errors:
 			self.status = "Partial Success" if success_count else "Error"
 			indicator = "orange" if success_count else "red"
-			frappe.msgprint(f"{success_count} items processed, {len(errors)} failed. See sample below or full Error Log for details.", indicator=indicator, alert=True)
+			frappe.msgprint(f"{success_count} items processed, {len(errors)} failed. See error table below for details.", indicator=indicator, alert=True)
 		else:
 			self.error_html = ""
 			self.status = "Success"
@@ -2203,7 +2187,7 @@ class EcommerceBillImport(Document):
 			indicator = "orange" if success_count else "red"
 			frappe.msgprint(
 				f"{success_count} items processed{summary_extra}, {len(errors)} failed. "
-				"See sample below or full Error Log for details.",
+				"See error table below for details.",
 				indicator=indicator,
 				alert=True,
 			)
@@ -2211,11 +2195,22 @@ class EcommerceBillImport(Document):
 			self.error_html = ""
 			if success_count == 0 and existing_total == 0:
 				self.status = "Error"
-				frappe.msgprint(
-					"No invoices were created — input file produced no shipment or refund rows. "
-					"Check Transaction Type / Invoice Number columns.",
-					indicator="red",
+				# Surface the cause as an error row so it's visible on the doc.
+				rows_in_groups = sum(len(v) for v in invoice_groups.values())
+				diagnosis = (
+					f"No invoices were created. {len(invoice_groups)} invoice group(s) "
+					f"covering {rows_in_groups} row(s) parsed from the file, but none "
+					f"produced a sales/refund invoice. Likely causes: every row had a "
+					f"blank Invoice Number, or every row's Transaction Type was 'Cancel'. "
+					f"Check the input CSV."
 				)
+				errors.append({
+					"idx": "",
+					"invoice_id": "(no rows processed)",
+					"event": "Diagnosis",
+					"message": diagnosis,
+				})
+				frappe.msgprint(diagnosis, indicator="red")
 			elif success_count == 0 and existing_total > 0:
 				self.status = "Success"
 				frappe.msgprint(

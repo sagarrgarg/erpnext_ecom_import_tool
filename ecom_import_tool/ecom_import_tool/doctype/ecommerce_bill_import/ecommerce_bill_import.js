@@ -310,8 +310,11 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 			}
 		}
 
+		if (frm.doc.error_json) {
+			html += `<p>See error table below for per-row details.</p>`;
+		}
+
 		html += `
-				<p>To view detailed log, please check the Error Log or Import Log report.</p>
 			</div>
 		`;
 		
