@@ -152,6 +152,11 @@ def _amazon_append_si_line(si, *, item_code, qty, rate, hsn_code, description,
 				"rate": normalized_rate,
 				"tax_amount": tax_amount,
 				"description": tax_type,
+				# tax_exclusive_gross / taxable_value on every ecom MTR export is
+				# the PRE-tax basic rate; taxes are added ON TOP. Clear both flags
+				# explicitly so GST template hooks can't toggle them on save.
+				"included_in_print_rate": 0,
+				"included_in_paid_amount": 0,
 			})
 
 
