@@ -2320,20 +2320,25 @@ class EcommerceBillImport(Document):
 					doc.posting_time = invoice_dt.time()
 					doc.custom_ecommerce_operator = self.ecommerce_mapping
 					doc.custom_ecommerce_type = self.amazon_type
-					doc.taxes = [] if is_taxable else None
-					doc.update_stock = 1 if is_taxable else None
+					doc.taxes = []
+					doc.update_stock = 1
 					doc.set_warehouse = "" if not is_taxable else None
 					if not frappe.db.exists(doctype, qualified_invoice_no):
 						doc._ecom_name = qualified_invoice_no
 					doc.items = []
 
 					for idx, row in group_rows:
-						item_code = next((e_item.erp_item for e_item in ecommerce_mapping.ecom_item_table
-							if e_item.ecom_item_id == row.get(ecommerce_mapping.ecom_sku_column_header)), None)
+						sku_value = (
+							row.get(ecommerce_mapping.ecom_sku_column_header)
+							or row.get("sku")
+							or row.get("asin")
+						)
+						item_code = next((e_item.erp_item for e_item in (ecommerce_mapping.ecom_item_table or [])
+							if e_item.ecom_item_id == sku_value), None)
 						if not item_code:
-							raise Exception(f"Item mapping not found for SKU {row.sku}")
+							raise Exception(f"Item mapping not found for SKU={row.sku!r} / Asin={row.asin!r} (resolved={sku_value!r})")
 
-						wh = next((wh for wh in ecommerce_mapping.ecommerce_warehouse_mapping
+						wh = next((wh for wh in (ecommerce_mapping.ecommerce_warehouse_mapping or [])
 							if wh.ecom_warehouse_id == row.ship_from_fc), None)
 						if not wh:
 							raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
@@ -2369,7 +2374,7 @@ class EcommerceBillImport(Document):
 							hsn_code=frappe.db.get_value("Item", item_code, "gst_hsn_code") or "",
 							description="",
 							warehouse=wh.erp_warehouse,
-							income_account="",
+							income_account=ecommerce_mapping.income_account or "",
 							custom_ecom_item_id="",
 							taxes=tax_tuples,
 						)
@@ -2404,12 +2409,17 @@ class EcommerceBillImport(Document):
 					location = None
 					com_address = None
 					for idx, row in group_rows:
-						item_code = next((e_item.erp_item for e_item in ecommerce_mapping.ecom_item_table
-							if e_item.ecom_item_id == row.get(ecommerce_mapping.ecom_sku_column_header)), None)
+						sku_value = (
+							row.get(ecommerce_mapping.ecom_sku_column_header)
+							or row.get("sku")
+							or row.get("asin")
+						)
+						item_code = next((e_item.erp_item for e_item in (ecommerce_mapping.ecom_item_table or [])
+							if e_item.ecom_item_id == sku_value), None)
 						if not item_code:
-							raise Exception(f"Item mapping not found for SKU {row.sku}")
+							raise Exception(f"Item mapping not found for SKU={row.sku!r} / Asin={row.asin!r} (resolved={sku_value!r})")
 
-						wh = next((wh for wh in ecommerce_mapping.ecommerce_warehouse_mapping
+						wh = next((wh for wh in (ecommerce_mapping.ecommerce_warehouse_mapping or [])
 							if wh.ecom_warehouse_id == row.ship_from_fc), None)
 						if not wh:
 							raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
