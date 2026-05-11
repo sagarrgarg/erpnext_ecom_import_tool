@@ -1408,12 +1408,12 @@ class EcommerceBillImport(Document):
 								si.company_address = com_address
 								si.ecommerce_gstin = mapped_ecommerce_gstin
 								if status!="Active":
-									if child_row.ship_to_state:
-										state=child_row.ship_to_state
-										if not state_code_dict.get(str(state.lower())):
+									state = child_row.bill_to_state or child_row.ship_to_state
+									if state:
+										if not state_code_dict.get(str(state).lower()):
 											error_names.append(invoice_no)
-											raise Exception(f"State name Is Wrong Please Check")
-										si.place_of_supply=state_code_dict.get(str(state.lower()))
+											raise Exception(f"State name Is Wrong Please Check: {state}")
+										si.place_of_supply=state_code_dict.get(str(state).lower())
 
 								qty = flt(child_row.quantity)
 								rate = (flt(child_row.tax_exclusive_gross) / qty) if qty else 0
@@ -1583,12 +1583,12 @@ class EcommerceBillImport(Document):
 											error_names.append(invoice_no)
 											raise Exception(f"Warehouse Mapping not found for Warehouse Id: {warehouse_id}")
 									if status!="Active":
-										if child_row.ship_to_state:
-											state=child_row.ship_to_state
-											if not state_code_dict.get(str(state.lower())):
+										state = child_row.bill_to_state or child_row.ship_to_state
+										if state:
+											if not state_code_dict.get(str(state).lower()):
 												error_names.append(invoice_no)
-												raise Exception(f"State name Is Wrong Please Check")
-											si_return.place_of_supply=state_code_dict.get(str(state.lower()))
+												raise Exception(f"State name Is Wrong Please Check: {state}")
+											si_return.place_of_supply=state_code_dict.get(str(state).lower())
 
 									if not si_return.location:
 										si_return.location = location
