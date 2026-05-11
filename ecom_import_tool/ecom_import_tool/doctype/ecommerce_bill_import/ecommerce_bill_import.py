@@ -3431,8 +3431,11 @@ class EcommerceBillImport(Document):
 						raise Exception(f"Invalid Item Quantity: {qty}")
 
 					taxable_total = flt(get_cell(row, "item_price_excluding_tax"))
-					if taxable_total <= 0:
-						raise Exception("Missing/invalid Item Price Excluding Tax")
+					if taxable_total < 0:
+						raise Exception(f"Negative Item Price Excluding Tax: {taxable_total}")
+					# taxable_total == 0 is valid (free shipments / promo / replacement
+					# orders show up as Shipped with zero value). Allow through;
+					# apply_pos_payment is a no-op when grand_total is 0.
 
 					rate = taxable_total / qty if qty else 0
 
