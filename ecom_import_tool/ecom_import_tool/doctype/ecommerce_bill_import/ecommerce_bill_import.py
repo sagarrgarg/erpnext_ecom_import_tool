@@ -2694,9 +2694,25 @@ class EcommerceBillImport(Document):
 						if row.order_item_id in existing_item_ids:
 							continue
 
-						item_code = get_item_code(row.get(flipkart.ecom_sku_column_header))
+						configured_col = (flipkart.ecom_sku_column_header or "").strip() or "fsn"
+						sku_value = row.get(configured_col)
+						if not sku_value:
+							# Fallback chain — try common Flipkart identifiers if the configured column
+							# isn't populated (e.g. doctype migration missed adding the field).
+							for fallback in ("fsn", "sku", "order_item_id"):
+								if fallback != configured_col and row.get(fallback):
+									sku_value = row.get(fallback)
+									break
+
+						item_code = get_item_code(sku_value)
 						if not item_code:
-							raise Exception(f"Item mapping not found for SKU: {row.get(flipkart.ecom_sku_column_header)}")
+							raise Exception(
+								f"Item mapping not found. configured_column={configured_col!r}, "
+								f"resolved_sku={sku_value!r}, fsn={row.get('fsn')!r}, "
+								f"sku={row.get('sku')!r}, order_item_id={row.get('order_item_id')!r}. "
+								f"Add the SKU to Ecommerce Item Mapping for '{flipkart.name}', "
+								f"or check the SKU column header on the Ecommerce Mapping."
+							)
 
 						warehouse, location, company_address = get_warehouse_info(row.warehouse_id)
 						row_ecommerce_gstin = get_gstin(row.seller_gstin)
@@ -2929,9 +2945,25 @@ class EcommerceBillImport(Document):
 						if row.order_item_id in existing_item_ids:
 							continue
 
-						item_code = get_item_code(row.get(flipkart.ecom_sku_column_header))
+						configured_col = (flipkart.ecom_sku_column_header or "").strip() or "fsn"
+						sku_value = row.get(configured_col)
+						if not sku_value:
+							# Fallback chain — try common Flipkart identifiers if the configured column
+							# isn't populated (e.g. doctype migration missed adding the field).
+							for fallback in ("fsn", "sku", "order_item_id"):
+								if fallback != configured_col and row.get(fallback):
+									sku_value = row.get(fallback)
+									break
+
+						item_code = get_item_code(sku_value)
 						if not item_code:
-							raise Exception(f"Item mapping not found for SKU: {row.get(flipkart.ecom_sku_column_header)}")
+							raise Exception(
+								f"Item mapping not found. configured_column={configured_col!r}, "
+								f"resolved_sku={sku_value!r}, fsn={row.get('fsn')!r}, "
+								f"sku={row.get('sku')!r}, order_item_id={row.get('order_item_id')!r}. "
+								f"Add the SKU to Ecommerce Item Mapping for '{flipkart.name}', "
+								f"or check the SKU column header on the Ecommerce Mapping."
+							)
 
 						warehouse, location, company_address = get_warehouse_info(row.warehouse_id)
 						row_ecommerce_gstin = get_gstin(row.seller_gstin)
