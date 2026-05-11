@@ -643,18 +643,49 @@ class EcommerceBillImport(Document):
 			"import_summary": getattr(self, "import_summary", "") or "",
 		})
 
-	def _set_import_summary(self, *, created=0, existing=0, failed=0, label=""):
+	def _set_import_summary(self, *, created=0, existing=0, failed=0, label="", drafts_removed=0):
 		"""Stash a small JSON breakdown so the JS import log can show
-		'X created, Y already existed, Z failed' next to the status banner."""
+		'X created, Y already existed, Z failed, W stale drafts removed' next to
+		the status banner."""
 		try:
 			self.import_summary = json.dumps({
 				"label": label or "",
 				"created": int(created or 0),
 				"existing": int(existing or 0),
 				"failed": int(failed or 0),
+				"drafts_removed": int(drafts_removed or 0),
 			})
 		except Exception:
 			self.import_summary = ""
+
+	def _cleanup_stale_drafts(self, *, operator, subtype=None, doctypes=("Sales Invoice",)):
+		"""Delete any docstatus=0 docs matching custom_ecommerce_operator (and
+		optionally custom_ecommerce_type). Called at the end of each create_*
+		method so leftovers from previously-failed runs don't accumulate.
+
+		Returns a dict {doctype: count_deleted}.
+		"""
+		filters = {"custom_ecommerce_operator": operator, "docstatus": 0}
+		if subtype:
+			filters["custom_ecommerce_type"] = subtype
+		result = {}
+		for dt in doctypes:
+			try:
+				names = frappe.get_all(dt, filters=filters, pluck="name")
+			except Exception:
+				# Some custom fields may not exist on every doctype (e.g. PR/PI
+				# without custom_ecommerce_*). Skip silently.
+				result[dt] = 0
+				continue
+			removed = 0
+			for n in names:
+				try:
+					frappe.delete_doc(dt, n, force=1, ignore_permissions=True, delete_permanently=True)
+					removed += 1
+				except Exception as e:
+					frappe.log_error(f"Could not delete stale draft {dt}:{n} — {e}")
+			result[dt] = removed
+		return result
 
 	def _persist_errors(self, errors):
 		"""Persist all errors directly on the doc as JSON.
@@ -1722,11 +1753,25 @@ class EcommerceBillImport(Document):
 					indicator="green",
 				)
 
+		cleanup = self._cleanup_stale_drafts(
+			operator=self.ecommerce_mapping,
+			subtype=self.amazon_type,
+			doctypes=("Sales Invoice",),
+		)
+		removed_total = sum(cleanup.values())
+		if removed_total:
+			frappe.msgprint(
+				f"Removed {removed_total} stale draft(s) for {self.ecommerce_mapping}: " +
+				", ".join(f"{dt}={n}" for dt, n in cleanup.items() if n),
+				indicator="orange",
+			)
+
 		self._set_import_summary(
 			created=success_count,
 			existing=existing_total,
 			failed=len(errors),
 			label="Amazon B2B",
+			drafts_removed=removed_total,
 		)
 		self._persist_errors(errors)
 		self._update_import_status()
@@ -2217,11 +2262,25 @@ class EcommerceBillImport(Document):
 					indicator="green",
 				)
 
+		cleanup = self._cleanup_stale_drafts(
+			operator=self.ecommerce_mapping,
+			subtype=self.amazon_type,
+			doctypes=("Sales Invoice",),
+		)
+		removed_total = sum(cleanup.values())
+		if removed_total:
+			frappe.msgprint(
+				f"Removed {removed_total} stale draft(s) for {self.ecommerce_mapping}: " +
+				", ".join(f"{dt}={n}" for dt, n in cleanup.items() if n),
+				indicator="orange",
+			)
+
 		self._set_import_summary(
 			created=success_count,
 			existing=existing_total,
 			failed=len(errors),
 			label="Amazon B2C",
+			drafts_removed=removed_total,
 		)
 		self._persist_errors(errors)
 		self._update_import_status()
@@ -2528,11 +2587,25 @@ class EcommerceBillImport(Document):
 					indicator="green",
 				)
 
+		cleanup = self._cleanup_stale_drafts(
+			operator=self.ecommerce_mapping,
+			subtype=self.amazon_type,
+			doctypes=("Sales Invoice", "Delivery Note", "Purchase Invoice", "Purchase Receipt"),
+		)
+		removed_total = sum(cleanup.values())
+		if removed_total:
+			frappe.msgprint(
+				f"Removed {removed_total} stale draft(s) for {self.ecommerce_mapping}: " +
+				", ".join(f"{dt}={n}" for dt, n in cleanup.items() if n),
+				indicator="orange",
+			)
+
 		self._set_import_summary(
 			created=success_count,
 			existing=existing_count,
 			failed=len(errors),
 			label="Amazon Stock Transfer",
+			drafts_removed=removed_total,
 		)
 		self._persist_errors(errors)
 		self._update_import_status()
@@ -3095,6 +3168,18 @@ class EcommerceBillImport(Document):
 				phase="flipkart_returns",
 			)
 
+		cleanup = self._cleanup_stale_drafts(
+			operator=self.ecommerce_mapping,
+			doctypes=("Sales Invoice",),
+		)
+		removed_total = sum(cleanup.values())
+		if removed_total:
+			frappe.msgprint(
+				f"Removed {removed_total} stale draft(s) for {self.ecommerce_mapping}: " +
+				", ".join(f"{dt}={n}" for dt, n in cleanup.items() if n),
+				indicator="orange",
+			)
+
 		self._persist_errors(errors)
 		expected_total = expected_sale_invoices + expected_return_invoices
 		completed_total = sale_existing_count + sale_submitted_count + return_existing_count + return_submitted_count
@@ -3108,6 +3193,13 @@ class EcommerceBillImport(Document):
 		else:
 			self.status = "Partial Success"
 
+		self._set_import_summary(
+			created=sale_submitted_count + return_submitted_count,
+			existing=sale_existing_count + return_existing_count,
+			failed=len(errors),
+			label="Flipkart",
+			drafts_removed=removed_total,
+		)
 		self._update_import_status()
 
 		# 🔹 Final progress update
@@ -3680,11 +3772,24 @@ class EcommerceBillImport(Document):
 		else:
 			self.status = "Success"
 
+		cleanup = self._cleanup_stale_drafts(
+			operator=self.ecommerce_mapping,
+			doctypes=("Sales Invoice",),
+		)
+		removed_total = sum(cleanup.values())
+		if removed_total:
+			frappe.msgprint(
+				f"Removed {removed_total} stale draft(s) for {self.ecommerce_mapping}: " +
+				", ".join(f"{dt}={n}" for dt, n in cleanup.items() if n),
+				indicator="orange",
+			)
+
 		self._set_import_summary(
 			created=total_success,
 			existing=existing_count + existing_refund_count,
 			failed=len(errors),
 			label="CRED",
+			drafts_removed=removed_total,
 		)
 		self._update_import_status()
 
@@ -4216,6 +4321,18 @@ class EcommerceBillImport(Document):
 			phase="jiomart",
 		)
 
+		cleanup = self._cleanup_stale_drafts(
+			operator=self.ecommerce_mapping,
+			doctypes=("Sales Invoice",),
+		)
+		removed_total = sum(cleanup.values())
+		if removed_total:
+			frappe.msgprint(
+				f"Removed {removed_total} stale draft(s) for {self.ecommerce_mapping}: " +
+				", ".join(f"{dt}={n}" for dt, n in cleanup.items() if n),
+				indicator="orange",
+			)
+
 		self._persist_errors(errors)
 		if len(errors) == 0:
 			self.status = "Success"
@@ -4224,6 +4341,13 @@ class EcommerceBillImport(Document):
 		else:
 			self.status = "Error"
 
+		self._set_import_summary(
+			created=max(len(self.jio_mart_items) - len(errors), 0),
+			existing=0,
+			failed=len(errors),
+			label="Jio Mart",
+			drafts_removed=removed_total,
+		)
 		self._update_import_status()
 
 		return {

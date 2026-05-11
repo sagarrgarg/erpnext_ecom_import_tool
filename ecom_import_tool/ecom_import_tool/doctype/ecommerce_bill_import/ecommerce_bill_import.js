@@ -286,6 +286,9 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				if (typeof s.created === "number") parts.push(`<strong>${s.created}</strong> newly created`);
 				if (typeof s.existing === "number") parts.push(`<strong>${s.existing}</strong> already existed (skipped)`);
 				if (typeof s.failed === "number" && s.failed > 0) parts.push(`<strong>${s.failed}</strong> failed`);
+				if (typeof s.drafts_removed === "number" && s.drafts_removed > 0) {
+					parts.push(`<strong>${s.drafts_removed}</strong> stale draft(s) removed`);
+				}
 				if (parts.length) {
 					const label = s.label ? `${frappe.utils.escape_html(s.label)}: ` : "";
 					html += `<p>${label}${parts.join(", ")}</p>`;
