@@ -159,6 +159,11 @@ def _amazon_save_and_submit(si, *, mode_of_payment, due_date=None):
 	"""Save (so grand_total computes), clear item_tax_template/rate, apply POS
 	with the now-known grand_total, save again to validate POS, submit.
 
+	If clearing item_tax_template shifted grand_total on save 2, re-sync the
+	POS payment amount to the new total and save once more so paid_amount ==
+	grand_total and outstanding_amount == 0. Only fires the extra save when
+	the drift is actually nonzero.
+
 	Returns the saved (and submitted) si.
 	"""
 	si.save(ignore_permissions=True)
@@ -169,5 +174,15 @@ def _amazon_save_and_submit(si, *, mode_of_payment, due_date=None):
 	if due_date:
 		si.due_date = due_date
 	si.save(ignore_permissions=True)
+
+	# Re-sync POS payment if save 2 drifted grand_total. Happens on CRED
+	# where GST item_tax_template clearing redistributes line-level taxes
+	# slightly, leaving a 40-50 rs residual outstanding.
+	if mode_of_payment and si.get("payments") and flt(si.outstanding_amount):
+		target = flt(si.rounded_total) or flt(si.grand_total)
+		if target and flt(si.payments[0].amount) != target:
+			si.payments[0].amount = target
+			si.save(ignore_permissions=True)
+
 	si.submit()
 	return si
