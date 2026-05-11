@@ -3397,9 +3397,20 @@ class EcommerceBillImport(Document):
 				}
 
 				# --- Tax split decision (intra-state vs inter-state) ---
+				# Derive from the company_address's GSTIN — that's what ERPNext compares
+				# against place_of_supply during validate. CSV's seller_gstin can differ
+				# (e.g. merchant has multiple state registrations); using that here causes
+				# 'Cannot charge IGST for intra-state supplies' style rejections.
+				company_gstin = ""
+				if company_address:
+					company_gstin = (frappe.db.get_value("Address", company_address, "gstin") or "").strip()
+				company_state_code = company_gstin[:2] if company_gstin[:2].isdigit() else ""
+				# Fallback: if no GSTIN on the company_address, fall back to CSV seller_gstin
+				# so existing imports without correctly-configured addresses still work.
+				if not company_state_code:
+					company_state_code = (str(seller_gstin)[:2] if str(seller_gstin)[:2].isdigit() else "")
 				customer_state_code = (place_of_supply.split("-")[0] if place_of_supply else "")
-				seller_state_code = (str(seller_gstin)[:2] if str(seller_gstin)[:2].isdigit() else "")
-				is_intra_state = (seller_state_code and customer_state_code and seller_state_code == customer_state_code)
+				is_intra_state = (company_state_code and customer_state_code and company_state_code == customer_state_code)
 
 				# --- Process item rows ---
 				for row_idx, row in rows:
