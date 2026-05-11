@@ -1451,7 +1451,7 @@ class EcommerceBillImport(Document):
 									"invoice_id": invoice_no,
 									"message": f"Shipment item error: {str(item_error)}"
 								})
-						if items_append and not warehouse_mapping_missing and invoice_no not in error_log:
+						if si.items and not warehouse_mapping_missing and invoice_no not in error_log:
 							_amazon_save_and_submit(si, mode_of_payment=amazon.mode_of_payment, due_date=getdate(today()))
 							existing_si = si.name
 							success_count += len(shipment_items)
@@ -1642,7 +1642,7 @@ class EcommerceBillImport(Document):
 										"message": f"Refund item error: {str(item_error)}"
 									})
 
-							if items_append and not warehouse_mapping_missing and invoice_no not in si_return_error:
+							if si_return.items and not warehouse_mapping_missing and invoice_no not in si_return_error:
 								_amazon_save_and_submit(
 									si_return,
 									mode_of_payment=amazon.mode_of_payment,
@@ -1928,7 +1928,7 @@ class EcommerceBillImport(Document):
 							})
 
 					try:
-						if items_append and not warehouse_mapping_missing and invoice_no not in error_names:
+						if si.items and not warehouse_mapping_missing and invoice_no not in error_names:
 							_amazon_save_and_submit(si, mode_of_payment=amazon.mode_of_payment, due_date=getdate(today()))
 							existing_si = si.name
 							success_count += len(shipment_items)
@@ -2136,7 +2136,7 @@ class EcommerceBillImport(Document):
 								})
 
 						try:
-							if ritems_append and not warehouse_mapping_missing and invoice_no not in si_error:
+							if si_return.items and not warehouse_mapping_missing and invoice_no not in si_error:
 								_amazon_save_and_submit(
 									si_return,
 									mode_of_payment=amazon.mode_of_payment,
@@ -2798,7 +2798,7 @@ class EcommerceBillImport(Document):
 							"message": str(row_error)
 						})
 
-				if items_appended > 0 and not group_errors:
+				if si.items and not group_errors:
 					order_ids = set(r.order_id for r in rows if r.order_id)
 					if order_ids:
 						si.ecom_order_id = ", ".join(sorted(order_ids))
@@ -3048,7 +3048,7 @@ class EcommerceBillImport(Document):
 							"message": str(row_error)
 						})
 
-				if items_appended > 0 and not group_errors:
+				if si.items and not group_errors:
 					order_ids = set(r.order_id for r in rows if r.order_id)
 					if order_ids:
 						si.ecom_order_id = ", ".join(sorted(order_ids))
@@ -3935,7 +3935,7 @@ class EcommerceBillImport(Document):
 							"message": str(row_error)
 						})
 
-				if items_appended > 0:
+				if si.items:
 					order_ids = set(r.order_id for r in rows if r.order_id)
 					if order_ids:
 						si.ecom_order_id = ", ".join(sorted(order_ids))
@@ -4162,7 +4162,7 @@ class EcommerceBillImport(Document):
 							"message": str(row_error)
 						})
 
-				if items_appended > 0:
+				if si.items:
 					order_ids = set(r.order_id for r in rows if r.order_id)
 					if order_ids:
 						si.ecom_order_id = ", ".join(sorted(order_ids))
