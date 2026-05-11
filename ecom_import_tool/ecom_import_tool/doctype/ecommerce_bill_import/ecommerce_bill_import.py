@@ -1322,7 +1322,7 @@ class EcommerceBillImport(Document):
 				existing_si_draft = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=0, is_return=0)
 				existing_si = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=1, is_return=0)
 
-				amazon = frappe.get_doc("Ecommerce Mapping", {"platform": "Amazon"})
+				amazon = frappe.get_doc("Ecommerce Mapping", self.ecommerce_mapping)
 				error_log=[]
 				warehouse_mapping_missing = False
 				# If the sales invoice is already submitted, don't recreate it. Refunds (credit notes)
@@ -1794,7 +1794,7 @@ class EcommerceBillImport(Document):
 
 				existing_si_draft = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=0, is_return=0)
 				existing_si = find_existing_amazon_si(invoice_no, _inv_posting_date, docstatus=1, is_return=0)
-				amazon = frappe.get_doc("Ecommerce Mapping", {"platform": "Amazon"})
+				amazon = frappe.get_doc("Ecommerce Mapping", "Amazon")
 				warehouse_mapping_missing = False
 				# If the sales invoice is already submitted, don't recreate it. Refunds (credit notes)
 				# are handled below independently.
@@ -2243,7 +2243,7 @@ class EcommerceBillImport(Document):
 		from frappe.utils import flt, today, getdate
 		import json
 
-		ecommerce_mapping = frappe.get_doc("Ecommerce Mapping", {"platform": "Amazon"})
+		ecommerce_mapping = frappe.get_doc("Ecommerce Mapping", "Amazon")
 		customer = ecommerce_mapping.internal_company_customer
 		errors = []
 		success_count = 0
