@@ -1307,10 +1307,10 @@ class EcommerceBillImport(Document):
 								})
 								address.save(ignore_permissions=True)
 					else:
-						customer=frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "default_non_company_customer")
+						customer=frappe.db.get_value("Ecommerce Mapping", "Amazon", "default_non_company_customer")
 
 				if not customer:
-					customer=frappe.db.get_value("Ecommerce Mapping", {"platform": "Amazon"}, "default_non_company_customer")
+					customer=frappe.db.get_value("Ecommerce Mapping", "Amazon", "default_non_company_customer")
 
 				# Amazon reuses invoice numbers across fiscal years; FY-qualify the
 				# name so re-imports of next-FY data with the same invoice_no don't
@@ -1748,7 +1748,7 @@ class EcommerceBillImport(Document):
 	def create_sales_invoice_mtr_b2c(self):
 		val = frappe.db.get_value(
 			"Ecommerce Mapping",
-			{"platform": "Amazon"},
+			"Amazon",
 			"default_non_company_customer"
 		)
 
