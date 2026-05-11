@@ -3147,6 +3147,31 @@ class EcommerceBillImport(Document):
 				return ""
 			return clean_csv_cell(row.get(col))
 
+		# --- Build XLSX warehouse lookup (optional) ---
+		# CSV's Client Location is region-level (e.g. DELHI). The XLSX Cred Mail
+		# Report's Sales sheet carries the per-warehouse code (e.g. MEV110035B)
+		# in Warehouse_Location_Code, joined to CSV via CRED_Order_Item_Id ↔
+		# Suborder No. We prefer XLSX when present, fall back to CSV otherwise.
+		xlsx_warehouse_by_order_item = {}
+		if self.cred_refund_attach:
+			try:
+				xlsx_path = resolve_file_path(self.cred_refund_attach)
+				sdf = pd.read_excel(xlsx_path, sheet_name="Sales", dtype=str, keep_default_na=False)
+
+				# Strip backtick defensively in case CRED uses the same prefix on XLSX side.
+				def _strip_tick(v):
+					s = (str(v) or "").strip()
+					return s[1:] if s.startswith("`") else s
+
+				for _, srow in sdf.iterrows():
+					cred_oid = _strip_tick(srow.get("CRED_Order_Item_Id", ""))
+					wlc = (srow.get("Warehouse_Location_Code", "") or "").strip()
+					if cred_oid and wlc:
+						xlsx_warehouse_by_order_item[cred_oid] = wlc
+			except Exception:
+				# XLSX may be missing the Sales sheet or unreadable — fall back to CSV.
+				xlsx_warehouse_by_order_item = {}
+
 		def get_place_of_supply(state_name: str):
 			"""Resolve state name to place_of_supply code using state_code_dict."""
 			key = normalize_state_key(state_name)
@@ -3280,13 +3305,21 @@ class EcommerceBillImport(Document):
 				if not place_of_supply:
 					raise Exception(f"State name Is Wrong Please Check: {shipping_state!r}")
 
-				# --- Resolve warehouse from Client Location ---
-				client_location = get_cell(first_row, "client_location")
+				# --- Resolve warehouse: prefer XLSX Warehouse_Location_Code (granular,
+				# e.g. MEV110035B); fall back to CSV's Client Location (region-level,
+				# e.g. DELHI) if no XLSX attached or no per-order match.
+				csv_suborder = (get_cell(first_row, "suborder_no") or "").strip()
+				if csv_suborder.startswith("`"):
+					csv_suborder = csv_suborder[1:]
+				warehouse_code = (
+					xlsx_warehouse_by_order_item.get(csv_suborder)
+					or get_cell(first_row, "client_location")
+				)
 				wh_map = next(
 					(
 						w
 						for w in (cred_mapping.ecommerce_warehouse_mapping or [])
-						if (w.ecom_warehouse_id or "").strip() == client_location
+						if (w.ecom_warehouse_id or "").strip() == warehouse_code
 					),
 					None,
 				)
@@ -3295,7 +3328,11 @@ class EcommerceBillImport(Document):
 				company_address = (wh_map.erp_address if wh_map and wh_map.erp_address else cred_mapping.default_company_address)
 
 				if not warehouse:
-					raise Exception(f"Warehouse mapping missing for Client Location: {client_location!r}")
+					raise Exception(
+						f"Warehouse mapping missing for warehouse code: {warehouse_code!r} "
+						f"(CRED Order Item: {csv_suborder!r}). Add it in Ecommerce Mapping "
+						f"'{cred_mapping.name}' -> Warehouse Mapping, or set a default warehouse."
+					)
 
 				# --- Create or resume Sales Invoice ---
 				posting_dt = datetime.combine(invoice_dt.date(), invoice_dt.time())
