@@ -1461,7 +1461,6 @@ class EcommerceBillImport(Document):
 									income_account=amazon.income_account,
 									custom_ecom_item_id=child_row.shipment_item_id,
 									is_free_item=(str(child_row.transaction_type) == "FreeReplacement"),
-									margin_amount=flt(child_row.item_promo_discount),
 									tax_rate_scalar=flt(child_row.total_tax_amount),
 									taxes=[
 										("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
@@ -1651,7 +1650,6 @@ class EcommerceBillImport(Document):
 										warehouse=warehouse,
 										income_account=amazon.income_account,
 										custom_ecom_item_id=shipment_item_id,
-										margin_amount=flt(child_row.item_promo_discount),
 										tax_rate_scalar=flt(child_row.total_tax_amount),
 										taxes=[
 											("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
@@ -1950,7 +1948,6 @@ class EcommerceBillImport(Document):
 								income_account=amazon.income_account,
 								custom_ecom_item_id=shipment_item_id,
 								is_free_item=(str(child_row.transaction_type) == "FreeReplacement"),
-								margin_amount=flt(child_row.item_promo_discount),
 								tax_rate_scalar=flt(child_row.total_tax_amount),
 								taxes=[
 									("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
@@ -2158,7 +2155,6 @@ class EcommerceBillImport(Document):
 									warehouse=warehouse,
 									income_account=amazon.income_account,
 									custom_ecom_item_id=shipment_item_id,
-									margin_amount=flt(child_row.item_promo_discount),
 									tax_rate_scalar=flt(child_row.total_tax_amount),
 									taxes=[
 										("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), "Output Tax CGST - KGOPL"),
