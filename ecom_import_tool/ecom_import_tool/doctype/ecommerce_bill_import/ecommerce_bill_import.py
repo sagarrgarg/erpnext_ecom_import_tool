@@ -3442,30 +3442,38 @@ class EcommerceBillImport(Document):
 				# --- Resolve warehouse: prefer XLSX Warehouse_Location_Code (granular,
 				# e.g. MEV110035B); fall back to CSV's Client Location (region-level,
 				# e.g. DELHI) if no XLSX attached or no per-order match.
+				# Strictly route every CRED row through the MEV121003A warehouse
+				# mapping row (Haryana). XLSX Warehouse_Location_Code values and
+				# CSV Client Location are ignored — CRED's reporting is unreliable
+				# on warehouse codes (3000+ rows had garbage values in earlier
+				# exports), and the business books all CRED orders out of the
+				# Haryana FC anyway.
 				csv_suborder = (get_cell(first_row, "suborder_no") or "").strip()
 				if csv_suborder.startswith("`"):
 					csv_suborder = csv_suborder[1:]
-				warehouse_code = (
-					xlsx_warehouse_by_order_item.get(csv_suborder)
-					or get_cell(first_row, "client_location")
-				)
+				FORCED_WAREHOUSE_CODE = "MEV121003A"
 				wh_map = next(
 					(
 						w
 						for w in (cred_mapping.ecommerce_warehouse_mapping or [])
-						if (w.ecom_warehouse_id or "").strip() == warehouse_code
+						if (w.ecom_warehouse_id or "").strip() == FORCED_WAREHOUSE_CODE
 					),
 					None,
 				)
-				warehouse = (wh_map.erp_warehouse if wh_map and wh_map.erp_warehouse else cred_mapping.default_company_warehouse)
-				location = (wh_map.location if wh_map and wh_map.location else cred_mapping.default_company_location)
-				company_address = (wh_map.erp_address if wh_map and wh_map.erp_address else cred_mapping.default_company_address)
+				if not wh_map:
+					raise Exception(
+						f"CRED requires a warehouse mapping row with "
+						f"ecom_warehouse_id={FORCED_WAREHOUSE_CODE!r} on "
+						f"Ecommerce Mapping '{cred_mapping.name}'. Add it with the "
+						f"correct erp_warehouse + erp_address (Haryana)."
+					)
+				warehouse = wh_map.erp_warehouse or cred_mapping.default_company_warehouse
+				location = wh_map.location or cred_mapping.default_company_location
+				company_address = wh_map.erp_address or cred_mapping.default_company_address
 
 				if not warehouse:
 					raise Exception(
-						f"Warehouse mapping missing for warehouse code: {warehouse_code!r} "
-						f"(CRED Order Item: {csv_suborder!r}). Add it in Ecommerce Mapping "
-						f"'{cred_mapping.name}' -> Warehouse Mapping, or set a default warehouse."
+						f"Warehouse mapping {FORCED_WAREHOUSE_CODE} has no erp_warehouse set."
 					)
 
 				# --- Create or resume Sales Invoice ---
