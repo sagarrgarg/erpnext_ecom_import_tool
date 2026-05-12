@@ -3442,38 +3442,41 @@ class EcommerceBillImport(Document):
 				# --- Resolve warehouse: prefer XLSX Warehouse_Location_Code (granular,
 				# e.g. MEV110035B); fall back to CSV's Client Location (region-level,
 				# e.g. DELHI) if no XLSX attached or no per-order match.
-				# Strictly route every CRED row through the MEV121003A warehouse
-				# mapping row (Haryana). XLSX Warehouse_Location_Code values and
-				# CSV Client Location are ignored — CRED's reporting is unreliable
-				# on warehouse codes (3000+ rows had garbage values in earlier
-				# exports), and the business books all CRED orders out of the
-				# Haryana FC anyway.
+				# Strictly use the XLSX Warehouse_Location_Code value (e.g.
+				# MEV121003A, MEV110035B) for warehouse routing. No fallback to
+				# CSV Client Location — the XLSX value is the authoritative
+				# warehouse code per row. Throws if not found in the mapping.
 				csv_suborder = (get_cell(first_row, "suborder_no") or "").strip()
 				if csv_suborder.startswith("`"):
 					csv_suborder = csv_suborder[1:]
-				FORCED_WAREHOUSE_CODE = "MEV121003A"
+				warehouse_code = (xlsx_warehouse_by_order_item.get(csv_suborder) or "").strip()
+				if not warehouse_code:
+					raise Exception(
+						f"No Warehouse_Location_Code in CRED Mail Report XLSX for "
+						f"CRED Order Item {csv_suborder!r}. Re-export the XLSX or "
+						f"attach the correct file."
+					)
 				wh_map = next(
 					(
 						w
 						for w in (cred_mapping.ecommerce_warehouse_mapping or [])
-						if (w.ecom_warehouse_id or "").strip() == FORCED_WAREHOUSE_CODE
+						if (w.ecom_warehouse_id or "").strip() == warehouse_code
 					),
 					None,
 				)
 				if not wh_map:
 					raise Exception(
-						f"CRED requires a warehouse mapping row with "
-						f"ecom_warehouse_id={FORCED_WAREHOUSE_CODE!r} on "
-						f"Ecommerce Mapping '{cred_mapping.name}'. Add it with the "
-						f"correct erp_warehouse + erp_address (Haryana)."
+						f"Warehouse mapping missing for warehouse code: {warehouse_code!r} "
+						f"(CRED Order Item: {csv_suborder!r}). Add it in Ecommerce Mapping "
+						f"'{cred_mapping.name}' -> Warehouse Mapping."
 					)
-				warehouse = wh_map.erp_warehouse or cred_mapping.default_company_warehouse
-				location = wh_map.location or cred_mapping.default_company_location
-				company_address = wh_map.erp_address or cred_mapping.default_company_address
+				warehouse = wh_map.erp_warehouse
+				location = wh_map.location
+				company_address = wh_map.erp_address
 
 				if not warehouse:
 					raise Exception(
-						f"Warehouse mapping {FORCED_WAREHOUSE_CODE} has no erp_warehouse set."
+						f"Warehouse mapping {warehouse_code!r} has no erp_warehouse set."
 					)
 
 				# --- Create or resume Sales Invoice ---
