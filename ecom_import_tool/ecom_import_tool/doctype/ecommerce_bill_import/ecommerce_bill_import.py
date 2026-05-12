@@ -3987,8 +3987,6 @@ class EcommerceBillImport(Document):
 							"gst_hsn_code": hsn_code,
 							"description": row.product_titledescription,
 							"warehouse": warehouse,
-							"margin_type": "Amount",
-							"margin_rate_or_amount": flt(row.seller_coupon_amount),
 							"income_account": jiomart.income_account,
 							"custom_ecom_item_id": row.order_item_id
 						}
@@ -4216,8 +4214,6 @@ class EcommerceBillImport(Document):
 							"gst_hsn_code": hsn_code,
 							"description": row.product_titledescription,
 							"warehouse": warehouse,
-							"margin_type": "Amount",
-							"margin_rate_or_amount": flt(row.seller_coupon_amount),
 							"income_account": jiomart.income_account,
 							"custom_ecom_item_id": row.order_item_id
 						}
