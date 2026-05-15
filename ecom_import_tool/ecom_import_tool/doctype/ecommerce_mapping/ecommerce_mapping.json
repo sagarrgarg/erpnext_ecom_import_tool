@@ -18,6 +18,14 @@
   "ecom_item_table",
   "income_account",
   "mode_of_payment",
+  "tax_accounts_section",
+  "output_cgst_account",
+  "output_sgst_account",
+  "output_igst_account",
+  "tax_accounts_column",
+  "input_cgst_account",
+  "input_sgst_account",
+  "input_igst_account",
   "warehouse_tab",
   "default_company_warehouse",
   "default_company_location",
@@ -137,6 +145,55 @@
    "options": "Mode of Payment",
    "reqd": 1,
    "description": "Linked Mode of Payment for POS-style 100% settlement on every Sales Invoice / Credit Note created from this mapping. Must be unique per mapping; must have a default Account configured for at least one company."
+  },
+  {
+   "fieldname": "tax_accounts_section",
+   "fieldtype": "Section Break",
+   "label": "GST Tax Accounts",
+   "description": "Per-company GST account heads stamped on every Sales / Purchase Invoice produced by this mapping. Output accounts feed Sales Invoices and Credit Notes (all platforms). Input accounts feed Purchase Invoices / Receipts (Amazon stock-transfer pair only — leave blank for output-only platforms)."
+  },
+  {
+   "fieldname": "output_cgst_account",
+   "fieldtype": "Link",
+   "label": "Output CGST Account",
+   "options": "Account",
+   "reqd": 1
+  },
+  {
+   "fieldname": "output_sgst_account",
+   "fieldtype": "Link",
+   "label": "Output SGST Account",
+   "options": "Account",
+   "reqd": 1
+  },
+  {
+   "fieldname": "output_igst_account",
+   "fieldtype": "Link",
+   "label": "Output IGST Account",
+   "options": "Account",
+   "reqd": 1
+  },
+  {
+   "fieldname": "tax_accounts_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "input_cgst_account",
+   "fieldtype": "Link",
+   "label": "Input CGST Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "input_sgst_account",
+   "fieldtype": "Link",
+   "label": "Input SGST Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "input_igst_account",
+   "fieldtype": "Link",
+   "label": "Input IGST Account",
+   "options": "Account"
   },
   {
    "fieldname": "column_break_ybgs",
