@@ -1527,7 +1527,6 @@ class EcommerceBillImport(Document):
 								safe_refund_qty_rate(r[1].quantity, r[1].tax_exclusive_gross)[2]
 								for r in cn_refund_items
 							)
-							use_debit_note = all_zero_qty
 
 							# FY-qualify the credit note name (Amazon reuses CN numbers
 							# across years).
@@ -1565,13 +1564,13 @@ class EcommerceBillImport(Document):
 								customer=customer,
 								posting_dt=credit_note_dt,
 								ecom_name=qualified_cn_no,
-								is_return=not use_debit_note,
-								is_debit_note=use_debit_note,
-								return_against=existing_si if not use_debit_note else None,
+								is_return=True,
+								is_debit_note=False,
+								return_against=existing_si,
 								ecommerce_operator=self.ecommerce_mapping,
 								amazon_type=self.amazon_type,
 								ecommerce_gstin=mapped_ecommerce_gstin,
-								update_stock=0 if use_debit_note else 1,
+								update_stock=0 if all_zero_qty else 1,
 								draft_doc=draft_doc,
 							)
 
@@ -1631,7 +1630,7 @@ class EcommerceBillImport(Document):
 									refund_qty, refund_rate, is_zero_qty = safe_refund_qty_rate(
 										child_row.quantity, child_row.tax_exclusive_gross
 									)
-									if use_debit_note:
+									if all_zero_qty:
 										line_qty, line_rate = 0, refund_rate
 									elif is_zero_qty:
 										line_qty, line_rate = -1, refund_rate
@@ -2020,7 +2019,6 @@ class EcommerceBillImport(Document):
 							safe_refund_qty_rate(r[1].quantity, r[1].tax_exclusive_gross)[2]
 							for r in cn_refund_items
 						)
-						use_debit_note = all_zero_qty
 
 						# Qualify credit note name with FY end-year prefix to avoid
 						# cross-FY collisions (Amazon reuses CN numbers each year).
@@ -2070,13 +2068,13 @@ class EcommerceBillImport(Document):
 							customer=val,
 							posting_dt=credit_note_dt,
 							ecom_name=qualified_cn_no,
-							is_return=not use_debit_note,
-							is_debit_note=use_debit_note,
-							return_against=existing_si if not use_debit_note else None,
+							is_return=True,
+							is_debit_note=False,
+							return_against=existing_si,
 							ecommerce_operator=self.ecommerce_mapping,
 							amazon_type=self.amazon_type,
 							ecommerce_gstin=mapped_ecommerce_gstin,
-							update_stock=0 if use_debit_note else 1,
+							update_stock=0 if all_zero_qty else 1,
 							draft_doc=draft_doc,
 						)
 
@@ -2136,7 +2134,7 @@ class EcommerceBillImport(Document):
 								refund_qty, refund_rate, is_zero_qty = safe_refund_qty_rate(
 									child_row.quantity, child_row.tax_exclusive_gross
 								)
-								if use_debit_note:
+								if all_zero_qty:
 									line_qty, line_rate = 0, refund_rate
 								elif is_zero_qty:
 									line_qty, line_rate = -1, refund_rate

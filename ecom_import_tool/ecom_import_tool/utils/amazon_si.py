@@ -18,6 +18,8 @@ The `_amazon_*` prefix will become `_ecom_*` once the second consumer
 lands; until then it carries the historical name.
 """
 
+import json
+
 import frappe
 from frappe.utils import flt, getdate, today
 
@@ -117,6 +119,15 @@ def _amazon_append_si_line(si, *, item_code, qty, rate, hsn_code, description,
 	Tax rows with amount==0 are skipped. Multiple lines targeting the same
 	`account_head` accumulate into a single si.taxes row.
 	"""
+	# Per-item billed rates so _BilledTaxCalc.update_item_tax_map can re-stamp
+	# them on every recompute. Skip zero-amount taxes (the CSV had no charge
+	# under that head for this row).
+	billed_rates = {}
+	for tax_type, tax_rate, tax_amount, acc_head in taxes:
+		if not tax_amount:
+			continue
+		billed_rates[acc_head] = normalize_tax_rate(tax_rate)
+
 	item_row = {
 		"item_code": item_code,
 		"qty": qty,
@@ -127,6 +138,10 @@ def _amazon_append_si_line(si, *, item_code, qty, rate, hsn_code, description,
 		"warehouse": warehouse,
 		"income_account": income_account,
 		"custom_ecom_item_id": custom_ecom_item_id,
+		# Clear template so the Item-master tax schedule (which may have moved
+		# to a post-rate-change template) doesn't leak into item_tax_rate.
+		"item_tax_template": "",
+		"item_tax_rate": json.dumps(billed_rates) if billed_rates else "{}",
 	}
 	if tax_rate_scalar is not None:
 		item_row["tax_rate"] = tax_rate_scalar
@@ -135,7 +150,11 @@ def _amazon_append_si_line(si, *, item_code, qty, rate, hsn_code, description,
 		item_row["margin_rate_or_amount"] = margin_amount
 	if is_free_item:
 		item_row["is_free_item"] = 1
-	si.append("items", item_row)
+	appended_item = si.append("items", item_row)
+
+	if billed_rates:
+		rates_map = si.flags.setdefault("billed_item_tax_rates", {})
+		rates_map[str(appended_item.idx)] = billed_rates
 
 	for tax_type, tax_rate, tax_amount, acc_head in taxes:
 		if not tax_amount:
