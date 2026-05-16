@@ -356,6 +356,60 @@ state_code_dict = {
 _gstin_code_to_pos = {v.split("-", 1)[0]: v for v in state_code_dict.values()}
 
 
+def reclassify_gst_by_seller_state(seller_gstin, ship_to_state,
+                                    cgst_rate, sgst_rate, utgst_rate, igst_rate,
+                                    cgst_tax, sgst_tax, utgst_tax, igst_tax):
+	"""Reconcile CSV tax split with the actual intra/inter-state nature derived
+	from `seller_gstin` (first 2 digits) vs `ship_to_state`.
+
+	Amazon's MTR sometimes mis-tags IGST on intra-state rows (Bill From state
+	differs from seller GSTIN state). India Compliance will reject those at
+	submit. We trust seller GSTIN as ground truth for the supplier's state and
+	reshape the tax split to match.
+
+	Intra-state (seller_state == POS_state): any IGST amount/rate is split
+	equally into CGST + SGST.
+	Inter-state (seller_state != POS_state): any CGST/SGST/UTGST amount/rate is
+	merged into IGST.
+
+	Returns reclassified (cgst_rate, sgst_rate, utgst_rate, igst_rate,
+	cgst_tax, sgst_tax, utgst_tax, igst_tax). Inputs unchanged when the CSV
+	already matches the intra/inter classification.
+	"""
+	from frappe.utils import flt
+
+	cgst_rate = flt(cgst_rate); sgst_rate = flt(sgst_rate)
+	utgst_rate = flt(utgst_rate); igst_rate = flt(igst_rate)
+	cgst_tax = flt(cgst_tax); sgst_tax = flt(sgst_tax)
+	utgst_tax = flt(utgst_tax); igst_tax = flt(igst_tax)
+
+	seller_code = (str(seller_gstin or "")[:2]).strip()
+	pos_label = state_code_dict.get(normalize_state_key(ship_to_state))
+	pos_code = pos_label.split("-", 1)[0] if pos_label else ""
+
+	if not seller_code or not pos_code:
+		return cgst_rate, sgst_rate, utgst_rate, igst_rate, cgst_tax, sgst_tax, utgst_tax, igst_tax
+
+	intra = (seller_code == pos_code)
+
+	if intra and (igst_tax or igst_rate):
+		half_rate = igst_rate / 2.0
+		half_tax = igst_tax / 2.0
+		cgst_rate += half_rate
+		sgst_rate += half_rate
+		cgst_tax += half_tax
+		sgst_tax += half_tax
+		igst_rate = 0.0
+		igst_tax = 0.0
+	elif (not intra) and (cgst_tax or sgst_tax or utgst_tax or cgst_rate or sgst_rate or utgst_rate):
+		igst_rate += cgst_rate + sgst_rate + utgst_rate
+		igst_tax += cgst_tax + sgst_tax + utgst_tax
+		cgst_rate = sgst_rate = utgst_rate = 0.0
+		cgst_tax = sgst_tax = utgst_tax = 0.0
+
+	return cgst_rate, sgst_rate, utgst_rate, igst_rate, cgst_tax, sgst_tax, utgst_tax, igst_tax
+
+
 def _fiscal_year_end(posting_date):
 	"""Return the Fiscal Year *end* date for posting_date using ERPNext's
 	Fiscal Year doctype, or None if it cannot be resolved.
@@ -1459,14 +1513,21 @@ class EcommerceBillImport(Document):
 								if status!="Active":
 									state = child_row.bill_to_state or child_row.ship_to_state
 									if state:
-										if not state_code_dict.get(str(state).lower()):
+										if not state_code_dict.get(normalize_state_key(state)):
 											error_names.append(invoice_no)
 											raise Exception(f"State name Is Wrong Please Check: {state}")
-										si.place_of_supply=state_code_dict.get(str(state).lower())
+										si.place_of_supply=state_code_dict.get(normalize_state_key(state))
 
 								qty = flt(child_row.quantity)
 								rate = (flt(child_row.tax_exclusive_gross) / qty) if qty else 0
 								hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
+
+								(_c_r, _s_r, _u_r, _i_r,
+								 _c_t, _s_t, _u_t, _i_t) = reclassify_gst_by_seller_state(
+									child_row.seller_gstin, child_row.ship_to_state,
+									child_row.cgst_rate, child_row.sgst_rate, child_row.utgst_rate, child_row.igst_rate,
+									child_row.cgst_tax, child_row.sgst_tax, child_row.utgst_tax, child_row.igst_tax,
+								)
 
 								_amazon_append_si_line(
 									si,
@@ -1481,12 +1542,9 @@ class EcommerceBillImport(Document):
 									is_free_item=(str(child_row.transaction_type) == "FreeReplacement"),
 									tax_rate_scalar=flt(child_row.total_tax_amount),
 									taxes=[
-										("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), _settings_account("output_cgst")),
-										("SGST",
-										 flt(child_row.sgst_rate) + flt(child_row.utgst_rate),
-										 flt(child_row.sgst_tax) + flt(child_row.utgst_tax),
-										 _settings_account("output_sgst")),
-										("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), _settings_account("output_igst")),
+										("CGST", _c_r, _c_t, _settings_account("output_cgst")),
+										("SGST", _s_r + _u_r, _s_t + _u_t, _settings_account("output_sgst")),
+										("IGST", _i_r, _i_t, _settings_account("output_igst")),
 									],
 								)
 								if child_row.shipment_item_id:
@@ -1632,10 +1690,10 @@ class EcommerceBillImport(Document):
 									if status!="Active":
 										state = child_row.bill_to_state or child_row.ship_to_state
 										if state:
-											if not state_code_dict.get(str(state).lower()):
+											if not state_code_dict.get(normalize_state_key(state)):
 												error_names.append(invoice_no)
 												raise Exception(f"State name Is Wrong Please Check: {state}")
-											si_return.place_of_supply=state_code_dict.get(str(state).lower())
+											si_return.place_of_supply=state_code_dict.get(normalize_state_key(state))
 
 									if not si_return.location:
 										si_return.location = location
@@ -1664,14 +1722,16 @@ class EcommerceBillImport(Document):
 									# (inter-state shipping refund). taxable_value comes from
 									# shipping_amount_basis. Other refund shapes are untouched.
 									cgst_rate = flt(child_row.cgst_rate)
-									sgst_rate = flt(child_row.sgst_rate) + flt(child_row.utgst_rate)
+									sgst_rate = flt(child_row.sgst_rate)
+									utgst_rate = flt(child_row.utgst_rate)
 									igst_rate = flt(child_row.igst_rate)
 									cgst_amt = flt(child_row.cgst_tax)
-									sgst_amt = flt(child_row.sgst_tax) + flt(child_row.utgst_tax)
+									sgst_amt = flt(child_row.sgst_tax)
+									utgst_amt = flt(child_row.utgst_tax)
 									igst_amt = flt(child_row.igst_tax)
 									if (
 										all_zero_qty
-										and not (cgst_rate or sgst_rate or igst_rate)
+										and not (cgst_rate or sgst_rate or utgst_rate or igst_rate)
 										and flt(child_row.total_tax_amount)
 										and flt(child_row.shipping_igst_tax)
 									):
@@ -1679,6 +1739,13 @@ class EcommerceBillImport(Document):
 										basis = flt(child_row.shipping_amount_basis)
 										if basis:
 											igst_rate = abs(igst_amt / basis) * 100
+
+									(cgst_rate, sgst_rate, utgst_rate, igst_rate,
+									 cgst_amt, sgst_amt, utgst_amt, igst_amt) = reclassify_gst_by_seller_state(
+										child_row.seller_gstin, child_row.ship_to_state,
+										cgst_rate, sgst_rate, utgst_rate, igst_rate,
+										cgst_amt, sgst_amt, utgst_amt, igst_amt,
+									)
 
 									_amazon_append_si_line(
 										si_return,
@@ -1693,7 +1760,7 @@ class EcommerceBillImport(Document):
 										tax_rate_scalar=flt(child_row.total_tax_amount),
 										taxes=[
 											("CGST", cgst_rate, cgst_amt, _settings_account("output_cgst")),
-											("SGST", sgst_rate, sgst_amt, _settings_account("output_sgst")),
+											("SGST", sgst_rate + utgst_rate, sgst_amt + utgst_amt, _settings_account("output_sgst")),
 											("IGST", igst_rate, igst_amt, _settings_account("output_igst")),
 										],
 									)
@@ -1963,16 +2030,23 @@ class EcommerceBillImport(Document):
 							si.company_address = com_address
 							if child_row.ship_to_state:
 								state = child_row.ship_to_state
-								if not state_code_dict.get(str(state.lower())):
+								if not state_code_dict.get(normalize_state_key(state)):
 									error_names.append(invoice_no)
 									raise Exception(f"State name Is Wrong Please Check")
-								si.place_of_supply = state_code_dict.get(str(state.lower()))
+								si.place_of_supply = state_code_dict.get(normalize_state_key(state))
 							si.ecommerce_gstin = mapped_ecommerce_gstin
 
 							# ---- Append Item ----
 							hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
 							_b2c_qty = flt(child_row.quantity)
 							_b2c_rate = (flt(child_row.tax_exclusive_gross) / _b2c_qty) if _b2c_qty else 0
+
+							(_c_r, _s_r, _u_r, _i_r,
+							 _c_t, _s_t, _u_t, _i_t) = reclassify_gst_by_seller_state(
+								child_row.seller_gstin, child_row.ship_to_state,
+								child_row.cgst_rate, child_row.sgst_rate, child_row.utgst_rate, child_row.igst_rate,
+								child_row.cgst_tax, child_row.sgst_tax, child_row.utgst_tax, child_row.igst_tax,
+							)
 
 							_amazon_append_si_line(
 								si,
@@ -1987,12 +2061,9 @@ class EcommerceBillImport(Document):
 								is_free_item=(str(child_row.transaction_type) == "FreeReplacement"),
 								tax_rate_scalar=flt(child_row.total_tax_amount),
 								taxes=[
-									("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), _settings_account("output_cgst")),
-									("SGST",
-									 flt(child_row.sgst_rate) + flt(child_row.utgst_rate),
-									 flt(child_row.sgst_tax) + flt(child_row.utgst_tax),
-									 _settings_account("output_sgst")),
-									("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), _settings_account("output_igst")),
+									("CGST", _c_r, _c_t, _settings_account("output_cgst")),
+									("SGST", _s_r + _u_r, _s_t + _u_t, _settings_account("output_sgst")),
+									("IGST", _i_r, _i_t, _settings_account("output_igst")),
 								],
 							)
 							if shipment_item_id:
@@ -2163,10 +2234,10 @@ class EcommerceBillImport(Document):
 								si_return.company_address = com_address
 								if child_row.ship_to_state:
 									state = child_row.ship_to_state
-									if not state_code_dict.get(str(state.lower())):
+									if not state_code_dict.get(normalize_state_key(state)):
 										si_error.append(invoice_no)
 										raise Exception("State name Is Wrong Please Check")
-									si_return.place_of_supply = state_code_dict.get(str(state.lower()))
+									si_return.place_of_supply = state_code_dict.get(normalize_state_key(state))
 								si_return.ecommerce_gstin = mapped_ecommerce_gstin
 
 								refund_qty, refund_rate, is_zero_qty = safe_refund_qty_rate(
@@ -2188,14 +2259,16 @@ class EcommerceBillImport(Document):
 								# (inter-state shipping refund). taxable_value comes from
 								# shipping_amount_basis. Other refund shapes are untouched.
 								cgst_rate = flt(child_row.cgst_rate)
-								sgst_rate = flt(child_row.sgst_rate) + flt(child_row.utgst_rate)
+								sgst_rate = flt(child_row.sgst_rate)
+								utgst_rate = flt(child_row.utgst_rate)
 								igst_rate = flt(child_row.igst_rate)
 								cgst_amt = flt(child_row.cgst_tax)
-								sgst_amt = flt(child_row.sgst_tax) + flt(child_row.utgst_tax)
+								sgst_amt = flt(child_row.sgst_tax)
+								utgst_amt = flt(child_row.utgst_tax)
 								igst_amt = flt(child_row.igst_tax)
 								if (
 									all_zero_qty
-									and not (cgst_rate or sgst_rate or igst_rate)
+									and not (cgst_rate or sgst_rate or utgst_rate or igst_rate)
 									and flt(child_row.total_tax_amount)
 									and flt(child_row.shipping_igst_tax)
 								):
@@ -2203,6 +2276,13 @@ class EcommerceBillImport(Document):
 									basis = flt(child_row.shipping_amount_basis)
 									if basis:
 										igst_rate = abs(igst_amt / basis) * 100
+
+								(cgst_rate, sgst_rate, utgst_rate, igst_rate,
+								 cgst_amt, sgst_amt, utgst_amt, igst_amt) = reclassify_gst_by_seller_state(
+									child_row.seller_gstin, child_row.ship_to_state,
+									cgst_rate, sgst_rate, utgst_rate, igst_rate,
+									cgst_amt, sgst_amt, utgst_amt, igst_amt,
+								)
 
 								_amazon_append_si_line(
 									si_return,
@@ -2217,7 +2297,7 @@ class EcommerceBillImport(Document):
 									tax_rate_scalar=flt(child_row.total_tax_amount),
 									taxes=[
 										("CGST", cgst_rate, cgst_amt, _settings_account("output_cgst")),
-										("SGST", sgst_rate, sgst_amt, _settings_account("output_sgst")),
+										("SGST", sgst_rate + utgst_rate, sgst_amt + utgst_amt, _settings_account("output_sgst")),
 										("IGST", igst_rate, igst_amt, _settings_account("output_igst")),
 									],
 								)
@@ -2458,9 +2538,9 @@ class EcommerceBillImport(Document):
 						doc.company_address = wh.erp_address
 						if row.ship_to_state:
 							state=row.ship_to_state
-							if not state_code_dict.get(str(state.lower())):
+							if not state_code_dict.get(normalize_state_key(state)):
 								raise Exception(f"State name Is Wrong Please Check")
-							doc.place_of_supply = state_code_dict.get(str(row.ship_to_state).lower())
+							doc.place_of_supply = state_code_dict.get(normalize_state_key(row.ship_to_state))
 
 						qty = flt(row.quantity)
 						# In Amazon exports, taxable_value is typically the line total (not unit rate).
@@ -2548,7 +2628,7 @@ class EcommerceBillImport(Document):
 						pi_doc.billing_address = com_address
 					
 						# if row.ship_to_state:
-						# 	pi_doc.place_of_supply = state_code_dict.get(str(row.ship_to_state).lower())
+						# 	pi_doc.place_of_supply = state_code_dict.get(normalize_state_key(row.ship_to_state))
 
 						qty = flt(row.quantity)
 						rate = (flt(row.taxable_value) / qty) if qty else 0
@@ -4002,9 +4082,9 @@ class EcommerceBillImport(Document):
 					si.custom_ecommerce_type = self.amazon_type
 					if first.customers_billing_state:
 						state = first.customers_billing_state
-						if not state_code_dict.get(str(state).lower()):
+						if not state_code_dict.get(normalize_state_key(state)):
 							raise Exception("State name Is Wrong Please Check")
-						si.place_of_supply = state_code_dict.get(str(state).lower())
+						si.place_of_supply = state_code_dict.get(normalize_state_key(state))
 					si.taxes_and_charges = ""
 					si.update_stock = 1
 					si.company_address = company_address
@@ -4064,9 +4144,9 @@ class EcommerceBillImport(Document):
 						if not si.place_of_supply:
 							state = row.customers_delivery_state or row.customers_billing_state
 							if state:
-								if not state_code_dict.get(str(state).lower()):
+								if not state_code_dict.get(normalize_state_key(state)):
 									raise Exception("State name Is Wrong Please Check")
-								si.place_of_supply = state_code_dict.get(str(state).lower())
+								si.place_of_supply = state_code_dict.get(normalize_state_key(state))
 						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
 							if not frappe.db.exists("Sales Invoice", row.buyer_invoice_id):
 								si._ecom_name = row.buyer_invoice_id
@@ -4236,9 +4316,9 @@ class EcommerceBillImport(Document):
 						si._ecom_name = first.buyer_invoice_id
 					if first.customers_billing_state:
 						state = first.customers_billing_state
-						if not state_code_dict.get(str(state).lower()):
+						if not state_code_dict.get(normalize_state_key(state)):
 							raise Exception("State name Is Wrong Please Check")
-						si.place_of_supply = state_code_dict.get(str(state).lower())
+						si.place_of_supply = state_code_dict.get(normalize_state_key(state))
 
 				existing_item_ids = {
 					d.get("custom_ecom_item_id")
@@ -4287,9 +4367,9 @@ class EcommerceBillImport(Document):
 						if not si.place_of_supply:
 							state = row.customers_delivery_state or row.customers_billing_state
 							if state:
-								if not state_code_dict.get(str(state).lower()):
+								if not state_code_dict.get(normalize_state_key(state)):
 									raise Exception("State name Is Wrong Please Check")
-								si.place_of_supply = state_code_dict.get(str(state).lower())
+								si.place_of_supply = state_code_dict.get(normalize_state_key(state))
 						if si.is_new() and not getattr(si, '_ecom_name', None) and row.buyer_invoice_id:
 							# Avoid duplicate primary key errors if an invoice with this name already exists
 							existing_by_name = frappe.db.exists("Sales Invoice", row.buyer_invoice_id)
