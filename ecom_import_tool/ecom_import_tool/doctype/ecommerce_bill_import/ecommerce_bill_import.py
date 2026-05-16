@@ -24,6 +24,9 @@ from ecom_import_tool.ecom_import_tool.utils.amazon_si import (
 	_amazon_append_si_line,
 	_amazon_save_and_submit,
 )
+from ecom_import_tool.ecom_import_tool.doctype.india_ecommerce_reco_settings.india_ecommerce_reco_settings import (
+	get_account as _settings_account,
+)
 
 
 def resolve_file_path(file_url):
@@ -1478,12 +1481,12 @@ class EcommerceBillImport(Document):
 									is_free_item=(str(child_row.transaction_type) == "FreeReplacement"),
 									tax_rate_scalar=flt(child_row.total_tax_amount),
 									taxes=[
-										("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), amazon.output_cgst_account),
+										("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), _settings_account("output_cgst")),
 										("SGST",
 										 flt(child_row.sgst_rate) + flt(child_row.utgst_rate),
 										 flt(child_row.sgst_tax) + flt(child_row.utgst_tax),
-										 amazon.output_sgst_account),
-										("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), amazon.output_igst_account),
+										 _settings_account("output_sgst")),
+										("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), _settings_account("output_igst")),
 									],
 								)
 								if child_row.shipment_item_id:
@@ -1689,9 +1692,9 @@ class EcommerceBillImport(Document):
 										custom_ecom_item_id=shipment_item_id,
 										tax_rate_scalar=flt(child_row.total_tax_amount),
 										taxes=[
-											("CGST", cgst_rate, cgst_amt, amazon.output_cgst_account),
-											("SGST", sgst_rate, sgst_amt, amazon.output_sgst_account),
-											("IGST", igst_rate, igst_amt, amazon.output_igst_account),
+											("CGST", cgst_rate, cgst_amt, _settings_account("output_cgst")),
+											("SGST", sgst_rate, sgst_amt, _settings_account("output_sgst")),
+											("IGST", igst_rate, igst_amt, _settings_account("output_igst")),
 										],
 									)
 									if shipment_item_id:
@@ -1984,12 +1987,12 @@ class EcommerceBillImport(Document):
 								is_free_item=(str(child_row.transaction_type) == "FreeReplacement"),
 								tax_rate_scalar=flt(child_row.total_tax_amount),
 								taxes=[
-									("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), amazon.output_cgst_account),
+									("CGST", flt(child_row.cgst_rate), flt(child_row.cgst_tax), _settings_account("output_cgst")),
 									("SGST",
 									 flt(child_row.sgst_rate) + flt(child_row.utgst_rate),
 									 flt(child_row.sgst_tax) + flt(child_row.utgst_tax),
-									 amazon.output_sgst_account),
-									("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), amazon.output_igst_account),
+									 _settings_account("output_sgst")),
+									("IGST", flt(child_row.igst_rate), flt(child_row.igst_tax), _settings_account("output_igst")),
 								],
 							)
 							if shipment_item_id:
@@ -2213,9 +2216,9 @@ class EcommerceBillImport(Document):
 									custom_ecom_item_id=shipment_item_id,
 									tax_rate_scalar=flt(child_row.total_tax_amount),
 									taxes=[
-										("CGST", cgst_rate, cgst_amt, amazon.output_cgst_account),
-										("SGST", sgst_rate, sgst_amt, amazon.output_sgst_account),
-										("IGST", igst_rate, igst_amt, amazon.output_igst_account),
+										("CGST", cgst_rate, cgst_amt, _settings_account("output_cgst")),
+										("SGST", sgst_rate, sgst_amt, _settings_account("output_sgst")),
+										("IGST", igst_rate, igst_amt, _settings_account("output_igst")),
 									],
 								)
 								if shipment_item_id:
@@ -2466,12 +2469,12 @@ class EcommerceBillImport(Document):
 
 						tax_tuples = [
 							("CGST", flt(row.cgst_rate), flt(row.cgst_amount),
-							 ecommerce_mapping.output_cgst_account),
+							 _settings_account("output_cgst")),
 							("SGST", flt(row.sgst_rate) + flt(row.utgst_rate),
 							 flt(row.sgst_amount) + flt(row.utgst_amount),
-							 ecommerce_mapping.output_sgst_account),
+							 _settings_account("output_sgst")),
 							("IGST", flt(row.igst_rate), flt(row.igst_amount),
-							 ecommerce_mapping.output_igst_account),
+							 _settings_account("output_igst")),
 						] if is_taxable else []
 
 						_amazon_append_si_line(
@@ -2552,12 +2555,12 @@ class EcommerceBillImport(Document):
 
 						tax_tuples = [
 							("CGST", flt(row.cgst_rate), flt(row.cgst_amount),
-							 ecommerce_mapping.input_cgst_account),
+							 _settings_account("input_cgst")),
 							("SGST", flt(row.sgst_rate) + flt(row.utgst_rate),
 							 flt(row.sgst_amount) + flt(row.utgst_amount),
-							 ecommerce_mapping.input_sgst_account),
+							 _settings_account("input_sgst")),
 							("IGST", flt(row.igst_rate), flt(row.igst_amount),
-							 ecommerce_mapping.input_igst_account),
+							 _settings_account("input_igst")),
 						] if is_taxable else []
 
 						_amazon_append_si_line(
@@ -2904,9 +2907,9 @@ class EcommerceBillImport(Document):
 							income_account=flipkart.income_account,
 							custom_ecom_item_id=row.order_item_id,
 							taxes=[
-								("CGST", flt(row.cgst_rate), cgst_amt, flipkart.output_cgst_account),
-								("SGST", flt(row.sgst_rate), sgst_amt, flipkart.output_sgst_account),
-								("IGST", flt(row.igst_rate), igst_amt, flipkart.output_igst_account),
+								("CGST", flt(row.cgst_rate), cgst_amt, _settings_account("output_cgst")),
+								("SGST", flt(row.sgst_rate), sgst_amt, _settings_account("output_sgst")),
+								("IGST", flt(row.igst_rate), igst_amt, _settings_account("output_igst")),
 							],
 						)
 						existing_item_ids.add(row.order_item_id)
@@ -3154,9 +3157,9 @@ class EcommerceBillImport(Document):
 							income_account=flipkart.income_account,
 							custom_ecom_item_id=row.order_item_id,
 							taxes=[
-								("CGST", flt(row.cgst_rate), cgst_amt, flipkart.output_cgst_account),
-								("SGST", flt(row.sgst_rate), sgst_amt, flipkart.output_sgst_account),
-								("IGST", flt(row.igst_rate), igst_amt, flipkart.output_igst_account),
+								("CGST", flt(row.cgst_rate), cgst_amt, _settings_account("output_cgst")),
+								("SGST", flt(row.sgst_rate), sgst_amt, _settings_account("output_sgst")),
+								("IGST", flt(row.igst_rate), igst_amt, _settings_account("output_igst")),
 							],
 						)
 						existing_item_ids.add(row.order_item_id)
@@ -3617,15 +3620,15 @@ class EcommerceBillImport(Document):
 						half_rate = (row_tax_rate / 2) if row_tax_rate else 0
 						half_amount = row_tax_amount / 2
 						row_taxes = [
-							("CGST", half_rate, half_amount, cred_mapping.output_cgst_account),
-							("SGST", half_rate, half_amount, cred_mapping.output_sgst_account),
-							("IGST", 0, 0, cred_mapping.output_igst_account),
+							("CGST", half_rate, half_amount, _settings_account("output_cgst")),
+							("SGST", half_rate, half_amount, _settings_account("output_sgst")),
+							("IGST", 0, 0, _settings_account("output_igst")),
 						]
 					elif row_tax_amount > 0:
 						row_taxes = [
-							("CGST", 0, 0, cred_mapping.output_cgst_account),
-							("SGST", 0, 0, cred_mapping.output_sgst_account),
-							("IGST", row_tax_rate, row_tax_amount, cred_mapping.output_igst_account),
+							("CGST", 0, 0, _settings_account("output_cgst")),
+							("SGST", 0, 0, _settings_account("output_sgst")),
+							("IGST", row_tax_rate, row_tax_amount, _settings_account("output_igst")),
 						]
 					else:
 						row_taxes = []
@@ -3780,15 +3783,15 @@ class EcommerceBillImport(Document):
 						half_rate = gst_rate / 2.0
 						half_amt = tax_amt_total / 2.0
 						row_taxes = [
-							("CGST", half_rate, half_amt, cred_mapping.output_cgst_account),
-							("SGST", half_rate, half_amt, cred_mapping.output_sgst_account),
-							("IGST", 0, 0, cred_mapping.output_igst_account),
+							("CGST", half_rate, half_amt, _settings_account("output_cgst")),
+							("SGST", half_rate, half_amt, _settings_account("output_sgst")),
+							("IGST", 0, 0, _settings_account("output_igst")),
 						]
 					else:
 						row_taxes = [
-							("CGST", 0, 0, cred_mapping.output_cgst_account),
-							("SGST", 0, 0, cred_mapping.output_sgst_account),
-							("IGST", gst_rate, tax_amt_total, cred_mapping.output_igst_account),
+							("CGST", 0, 0, _settings_account("output_cgst")),
+							("SGST", 0, 0, _settings_account("output_sgst")),
+							("IGST", gst_rate, tax_amt_total, _settings_account("output_igst")),
 						]
 
 					_amazon_append_si_line(
@@ -4073,9 +4076,9 @@ class EcommerceBillImport(Document):
 						items_appended += 1
 
 						for tax_type, rate, amount, acc_head in [
-							("CGST", row.cgst_rate, flt(row.cgst_amount), jiomart.output_cgst_account),
-							("SGST", row.sgst_rate_or_utgst_as_applicable, flt(row.sgst_amount_or_utgst_as_applicable), jiomart.output_sgst_account),
-							("IGST", row.igst_rate, flt(row.igst_amount), jiomart.output_igst_account)
+							("CGST", row.cgst_rate, flt(row.cgst_amount), _settings_account("output_cgst")),
+							("SGST", row.sgst_rate_or_utgst_as_applicable, flt(row.sgst_amount_or_utgst_as_applicable), _settings_account("output_sgst")),
+							("IGST", row.igst_rate, flt(row.igst_amount), _settings_account("output_igst"))
 						]:
 							if amount:
 								existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)
@@ -4298,9 +4301,9 @@ class EcommerceBillImport(Document):
 						items_appended += 1
 
 						for tax_type, rate, amount, acc_head in [
-							("CGST", row.cgst_rate, flt(row.cgst_amount), jiomart.output_cgst_account),
-							("SGST", row.sgst_rate_or_utgst_as_applicable, flt(row.sgst_amount_or_utgst_as_applicable), jiomart.output_sgst_account),
-							("IGST", row.igst_rate, flt(row.igst_amount), jiomart.output_igst_account)
+							("CGST", row.cgst_rate, flt(row.cgst_amount), _settings_account("output_cgst")),
+							("SGST", row.sgst_rate_or_utgst_as_applicable, flt(row.sgst_amount_or_utgst_as_applicable), _settings_account("output_sgst")),
+							("IGST", row.igst_rate, flt(row.igst_amount), _settings_account("output_igst"))
 						]:
 							if amount:
 								existing_tax = next((t for t in si.taxes if t.account_head == acc_head), None)

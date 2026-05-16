@@ -1,0 +1,128 @@
+{
+ "actions": [],
+ "creation": "2026-05-16 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "gst_accounts_section",
+  "output_cgst_account",
+  "output_sgst_account",
+  "output_igst_account",
+  "gst_accounts_column",
+  "input_cgst_account",
+  "input_sgst_account",
+  "input_igst_account",
+  "tax_templates_section",
+  "sales_taxes_template_intra_state",
+  "sales_taxes_template_inter_state",
+  "tax_templates_column",
+  "purchase_taxes_template_intra_state",
+  "purchase_taxes_template_inter_state"
+ ],
+ "fields": [
+  {
+   "fieldname": "gst_accounts_section",
+   "fieldtype": "Section Break",
+   "label": "GST Accounts",
+   "description": "Single source of truth for the GST account heads stamped on every Sales / Purchase Invoice produced by an ecom import. Configure once; every Ecommerce Mapping inherits these. Output accounts feed Sales Invoices / Credit Notes; Input accounts feed the Amazon stock-transfer Purchase Invoice / Receipt pair."
+  },
+  {
+   "fieldname": "output_cgst_account",
+   "fieldtype": "Link",
+   "label": "Output CGST Account",
+   "options": "Account",
+   "reqd": 1
+  },
+  {
+   "fieldname": "output_sgst_account",
+   "fieldtype": "Link",
+   "label": "Output SGST Account",
+   "options": "Account",
+   "reqd": 1
+  },
+  {
+   "fieldname": "output_igst_account",
+   "fieldtype": "Link",
+   "label": "Output IGST Account",
+   "options": "Account",
+   "reqd": 1
+  },
+  {
+   "fieldname": "gst_accounts_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "input_cgst_account",
+   "fieldtype": "Link",
+   "label": "Input CGST Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "input_sgst_account",
+   "fieldtype": "Link",
+   "label": "Input SGST Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "input_igst_account",
+   "fieldtype": "Link",
+   "label": "Input IGST Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "tax_templates_section",
+   "fieldtype": "Section Break",
+   "label": "Tax Templates (optional)",
+   "description": "Optional Sales / Purchase Taxes and Charges Templates. When set, the import binds the template to the Sales / Purchase Invoice's `taxes_and_charges` header so the standard ERPNext breakup / reporting matches your in-state vs out-of-state policy. Choose one template per direction; intra-state for CGST+SGST sales, inter-state for IGST."
+  },
+  {
+   "fieldname": "sales_taxes_template_intra_state",
+   "fieldtype": "Link",
+   "label": "Sales Taxes Template (Intra-state)",
+   "options": "Sales Taxes and Charges Template"
+  },
+  {
+   "fieldname": "sales_taxes_template_inter_state",
+   "fieldtype": "Link",
+   "label": "Sales Taxes Template (Inter-state)",
+   "options": "Sales Taxes and Charges Template"
+  },
+  {
+   "fieldname": "tax_templates_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "purchase_taxes_template_intra_state",
+   "fieldtype": "Link",
+   "label": "Purchase Taxes Template (Intra-state)",
+   "options": "Purchase Taxes and Charges Template"
+  },
+  {
+   "fieldname": "purchase_taxes_template_inter_state",
+   "fieldtype": "Link",
+   "label": "Purchase Taxes Template (Inter-state)",
+   "options": "Purchase Taxes and Charges Template"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-05-16 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Ecom Import Tool",
+ "name": "India Ecommerce Reco Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

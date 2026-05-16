@@ -34,15 +34,3 @@ class EcommerceMapping(Document):
 					"Open it and set Default Account for at least one company."
 				).format(self.mode_of_payment)
 			)
-
-		# Output GST accounts feed every Sales Invoice / Credit Note created by
-		# this mapping; required for all platforms. Input GST accounts only
-		# matter for the Amazon stock-transfer PI/PR pair, so they stay
-		# optional (validated at usage time inside the SR flow).
-		for fieldname, label in (
-			("output_cgst_account", "Output CGST Account"),
-			("output_sgst_account", "Output SGST Account"),
-			("output_igst_account", "Output IGST Account"),
-		):
-			if not self.get(fieldname):
-				frappe.throw(_("{0} is mandatory.").format(_(label)))
