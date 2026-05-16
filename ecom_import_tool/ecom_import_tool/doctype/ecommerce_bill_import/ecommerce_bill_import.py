@@ -573,7 +573,7 @@ class EcommerceBillImport(Document):
 	def create_invoice(self):
 		frappe.msgprint("Data Import Started")
 		# self.invoice_creation()
-		
+
 		job = frappe.enqueue(
 		self.invoice_creation,
 		queue='long',
@@ -581,6 +581,21 @@ class EcommerceBillImport(Document):
 		)
 
 		return job.id
+
+	@frappe.whitelist()
+	def reconcile_against_sales_invoices(self):
+		"""Compare CSV taxable / tax / total against the submitted Sales
+		Invoices created from this import. Used by the 'Reconcile' button.
+
+		Returns:
+		    list[dict]: one row per ecom invoice (sale or refund) with both
+		    CSV-side and SI-side totals, per-column variance, SI docstatus,
+		    and a `match` boolean. Mismatches sort first.
+		"""
+		from ecom_import_tool.ecom_import_tool.utils.reconcile import (
+			reconcile_ecommerce_bill_import,
+		)
+		return reconcile_ecommerce_bill_import(self)
 
 
 

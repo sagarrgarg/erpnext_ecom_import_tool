@@ -21,6 +21,26 @@ frappe.ui.form.on("Ecommerce Bill Import", {
 				});
 			}).addClass("btn-primary");
 
+		if (!frm.is_new()) {
+			frm.add_custom_button(__("Reconcile vs Sales Invoices"), function () {
+				frappe.dom.freeze(__("Running reconciliation..."));
+				frappe.call({
+					method: "frappe.handler.run_doc_method",
+					args: {
+						dt: frm.doc.doctype,
+						dn: frm.doc.name,
+						method: "reconcile_against_sales_invoices",
+					},
+					always: () => frappe.dom.unfreeze(),
+					callback: function (r) {
+						let rows = (r && r.message && r.message.message) || (r && r.message) || [];
+						if (!Array.isArray(rows)) rows = [];
+						_ecom_show_reconcile_dialog(frm, rows);
+					},
+				});
+			}, __("Actions"));
+		}
+
 		// }
 		if(frm.doc.ecommerce_mapping){
 		frappe.model.get_value('Ecommerce Mapping', {'name': frm.doc.ecommerce_mapping}, 'platform', function(value) {
@@ -383,3 +403,93 @@ frappe.ui.form.on("Ecommerce Bill Import", "onload", function(frm) {
 		frm.page.set_indicator(__("In Progress"), "orange");
 	}
 });
+
+
+// Reconciliation dialog renderer for "Reconcile vs Sales Invoices" button.
+// Kept at module scope so the refresh handler stays compact.
+function _ecom_show_reconcile_dialog(frm, rows) {
+	const total = rows.length;
+	const mismatches = rows.filter(r => !r.match).length;
+	const missing = rows.filter(r => r.si_status === "Missing").length;
+	const fmt = (n) => (n === null || n === undefined ? "" : frappe.format(n, { fieldtype: "Float", precision: 2 }));
+
+	let table = `
+		<div style="margin-bottom:8px;">
+			<strong>${total}</strong> invoices &middot;
+			<span style="color:${mismatches ? '#c0392b' : '#27ae60'};"><strong>${mismatches}</strong> mismatched</span> &middot;
+			<span style="color:${missing ? '#c0392b' : '#6c757d'};"><strong>${missing}</strong> missing SI</span>
+		</div>
+		<div style="margin-bottom:8px;">
+			<button class="btn btn-xs btn-default" id="ecom-recon-csv">${__("Download CSV")}</button>
+		</div>
+		<div style="max-height:65vh; overflow:auto;">
+		<table class="table table-bordered table-condensed" style="font-size:11px;">
+			<thead style="position:sticky; top:0; background:#fafafa;">
+				<tr>
+					<th>${__("Type")}</th>
+					<th>${__("Ecom Invoice")}</th>
+					<th>${__("SI Name")}</th>
+					<th>${__("Status")}</th>
+					<th class="text-right">${__("CSV Taxable")}</th>
+					<th class="text-right">${__("SI Taxable")}</th>
+					<th class="text-right">${__("Δ Taxable")}</th>
+					<th class="text-right">${__("CSV Tax")}</th>
+					<th class="text-right">${__("SI Tax")}</th>
+					<th class="text-right">${__("Δ Tax")}</th>
+					<th class="text-right">${__("CSV Total")}</th>
+					<th class="text-right">${__("SI Total")}</th>
+					<th class="text-right">${__("Δ Total")}</th>
+				</tr>
+			</thead><tbody>
+	`;
+	rows.forEach(r => {
+		const bg = r.match ? "" : (r.si_status === "Missing" ? "background:#fdecea;" : "background:#fff5e6;");
+		const si_link = r.si_name && r.si_status !== "Missing"
+			? `<a href="/app/sales-invoice/${encodeURIComponent(r.si_name)}" target="_blank">${frappe.utils.escape_html(r.si_name)}</a>`
+			: frappe.utils.escape_html(r.si_name || "");
+		table += `<tr style="${bg}">
+			<td>${frappe.utils.escape_html(r.type || "")}</td>
+			<td>${frappe.utils.escape_html(r.ecom_invoice_no || "")}</td>
+			<td>${si_link}</td>
+			<td>${frappe.utils.escape_html(r.si_status || "")}</td>
+			<td class="text-right">${fmt(r.csv_taxable)}</td>
+			<td class="text-right">${fmt(r.si_taxable)}</td>
+			<td class="text-right" style="${Math.abs(r.var_taxable) > 0.10 ? 'color:#c0392b;font-weight:bold;' : ''}">${fmt(r.var_taxable)}</td>
+			<td class="text-right">${fmt(r.csv_tax)}</td>
+			<td class="text-right">${fmt(r.si_tax)}</td>
+			<td class="text-right" style="${Math.abs(r.var_tax) > 0.10 ? 'color:#c0392b;font-weight:bold;' : ''}">${fmt(r.var_tax)}</td>
+			<td class="text-right">${fmt(r.csv_total)}</td>
+			<td class="text-right">${fmt(r.si_total)}</td>
+			<td class="text-right" style="${Math.abs(r.var_total) > 0.10 ? 'color:#c0392b;font-weight:bold;' : ''}">${fmt(r.var_total)}</td>
+		</tr>`;
+	});
+	table += `</tbody></table></div>`;
+
+	const d = new frappe.ui.Dialog({
+		title: __("Tax Reconciliation: CSV vs Sales Invoices"),
+		size: "extra-large",
+		fields: [{ fieldtype: "HTML", fieldname: "body" }],
+		primary_action_label: __("Close"),
+		primary_action: () => d.hide(),
+	});
+	d.fields_dict.body.$wrapper.html(table);
+	d.show();
+	d.$wrapper.find("#ecom-recon-csv").on("click", () => {
+		const headers = ["type","ecom_invoice_no","si_name","si_status","csv_taxable","si_taxable","var_taxable","csv_tax","si_tax","var_tax","csv_total","si_total","var_total","match"];
+		const lines = [headers.join(",")];
+		rows.forEach(r => {
+			lines.push(headers.map(h => {
+				let v = r[h];
+				if (typeof v === "string" && (v.includes(",") || v.includes('"'))) v = `"${v.replace(/"/g, '""')}"`;
+				return v === undefined || v === null ? "" : v;
+			}).join(","));
+		});
+		const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = `reconcile_${frm.doc.name}.csv`;
+		a.click();
+		URL.revokeObjectURL(url);
+	});
+}
