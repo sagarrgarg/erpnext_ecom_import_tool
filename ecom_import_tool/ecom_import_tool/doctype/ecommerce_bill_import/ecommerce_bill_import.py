@@ -1522,9 +1522,14 @@ class EcommerceBillImport(Document):
 								rate = (flt(child_row.tax_exclusive_gross) / qty) if qty else 0
 								hsn_code = frappe.db.get_value("Item", itemcode, "gst_hsn_code")
 
+								# B2B place_of_supply uses bill_to_state (the buyer's billing
+								# state) and only falls back to ship_to_state when missing —
+								# reclassifier must compare seller GSTIN against the SAME
+								# state the SI's POS was set from.
+								_pos_state = child_row.bill_to_state or child_row.ship_to_state
 								(_c_r, _s_r, _u_r, _i_r,
 								 _c_t, _s_t, _u_t, _i_t) = reclassify_gst_by_seller_state(
-									child_row.seller_gstin, child_row.ship_to_state,
+									child_row.seller_gstin, _pos_state,
 									child_row.cgst_rate, child_row.sgst_rate, child_row.utgst_rate, child_row.igst_rate,
 									child_row.cgst_tax, child_row.sgst_tax, child_row.utgst_tax, child_row.igst_tax,
 								)
@@ -1740,9 +1745,12 @@ class EcommerceBillImport(Document):
 										if basis:
 											igst_rate = abs(igst_amt / basis) * 100
 
+									# B2B refund POS uses bill_to_state ?? ship_to_state — same
+									# rule as the shipment leg above.
+									_pos_state = child_row.bill_to_state or child_row.ship_to_state
 									(cgst_rate, sgst_rate, utgst_rate, igst_rate,
 									 cgst_amt, sgst_amt, utgst_amt, igst_amt) = reclassify_gst_by_seller_state(
-										child_row.seller_gstin, child_row.ship_to_state,
+										child_row.seller_gstin, _pos_state,
 										cgst_rate, sgst_rate, utgst_rate, igst_rate,
 										cgst_amt, sgst_amt, utgst_amt, igst_amt,
 									)
