@@ -96,6 +96,16 @@ def _amazon_init_si_header(*, customer, posting_dt, ecom_name, is_return,
 			si.return_against = return_against
 		else:
 			si.return_against = None
+		# Clear stale items / taxes / payments so the caller re-populates with
+		# the current run's sign + classification. Old drafts can carry items
+		# from a prior import where qty was positive (pre-is_return fix) or
+		# taxes were classified the other way — keeping them means the reused
+		# draft's grand_total carries the wrong sign and trips "Amount must be
+		# negative" on the POS payment validation. The caller's per-row loop
+		# is the source of truth for what belongs in this credit note.
+		si.set("items", [])
+		si.set("taxes", [])
+		si.set("payments", [])
 		return si
 
 	si = frappe.new_doc("Sales Invoice")
