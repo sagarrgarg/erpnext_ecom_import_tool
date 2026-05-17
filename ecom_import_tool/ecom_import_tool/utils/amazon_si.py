@@ -58,6 +58,13 @@ def apply_pos_payment(si, mode_of_payment):
 	settle_amount = flt(si.rounded_total) or flt(si.grand_total)
 	if not settle_amount:
 		return
+	# ERPNext enforces sign on POS payments: is_return=1 requires amount<0,
+	# is_return=0 requires amount>0 (sales_invoice.py:346-351). Force the
+	# payment sign to match is_return so an upstream hook leaving grand_total
+	# in an unexpected sign (e.g. India Compliance touching totals on
+	# before_save) can't break the SI submit.
+	want_negative = bool(si.get("is_return"))
+	settle_amount = -abs(settle_amount) if want_negative else abs(settle_amount)
 	si.is_pos = 1
 	si.pos_profile = ""
 	# Block ERPNext set_pos_fields() from backfilling a default POS Profile.
@@ -65,7 +72,6 @@ def apply_pos_payment(si, mode_of_payment):
 	si.set("payments", [])
 	si.append("payments", {
 		"mode_of_payment": mode_of_payment,
-		# Already negative for is_return=1 (verify_payment_amount_is_negative).
 		"amount": settle_amount,
 	})
 
@@ -224,6 +230,11 @@ def _amazon_save_and_submit(si, *, mode_of_payment, due_date=None):
 	# slightly, leaving a 40-50 rs residual outstanding.
 	if mode_of_payment and si.get("payments") and flt(si.outstanding_amount):
 		target = flt(si.rounded_total) or flt(si.grand_total)
+		# Same sign-guard as apply_pos_payment — keep target on the side of
+		# zero ERPNext expects for this SI's is_return flag.
+		if target:
+			want_negative = bool(si.get("is_return"))
+			target = -abs(target) if want_negative else abs(target)
 		if target and flt(si.payments[0].amount) != target:
 			si.payments[0].amount = target
 			si.save(ignore_permissions=True)
