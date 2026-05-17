@@ -220,6 +220,13 @@ def _amazon_save_and_submit(si, *, mode_of_payment, due_date=None):
 	for it in si.items:
 		it.item_tax_template = ""
 		it.item_tax_rate = frappe._dict()
+	# Save once more BEFORE applying POS so India Compliance's
+	# update_gst_details (before_save) and _BilledTaxCalc (validate) settle
+	# the tax row and grand_total. Otherwise apply_pos_payment locks in a
+	# payment amount derived from save-1's grand_total which can drift
+	# after save 2's recompute, tripping validate_pos_return with
+	# "Total payments amount can't be greater than X".
+	si.save(ignore_permissions=True)
 	apply_pos_payment(si, mode_of_payment)
 	if due_date:
 		si.due_date = due_date
