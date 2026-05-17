@@ -86,6 +86,16 @@ def _amazon_init_si_header(*, customer, posting_dt, ecom_name, is_return,
 		si.is_return = 1 if is_return else 0
 		si.is_debit_note = 1 if is_debit_note else 0
 		si.ecommerce_gstin = ecommerce_gstin
+		# Re-stamp return_against + update_stock on the reused draft. An earlier
+		# failed pass may have left return_against=None (because the shipment
+		# SI wasn't submitted yet) — without this re-stamp the credit note stays
+		# a standalone return and triggers ERPNext's "Value cannot be negative
+		# for Incoming Rate" validation when items have negative stock_qty.
+		si.update_stock = update_stock
+		if return_against:
+			si.return_against = return_against
+		else:
+			si.return_against = None
 		return si
 
 	si = frappe.new_doc("Sales Invoice")
