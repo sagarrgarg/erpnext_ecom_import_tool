@@ -2595,15 +2595,18 @@ class EcommerceBillImport(Document):
 				)
 				# Also lookup by bill_no for taxable PIs — a prior import may have
 				# created the PI with an auto-named naming-series name (e.g.
-				# PI360226-0006) but stamped bill_no = qualified_invoice_no. The
-				# name-based lookup above misses those, so we'd retry creation and
-				# trip ERPNext's "Supplier Invoice No exists in Purchase Invoice X"
-				# duplicate-bill_no check. Honor the existing one instead.
+				# PI360226-0006) but stamped bill_no. The name-based lookup above
+				# misses those, so we'd retry creation and trip ERPNext's
+				# "Supplier Invoice No exists in Purchase Invoice X" duplicate
+				# check. Honor the existing one instead. We match either the raw
+				# Amazon invoice_no (current behavior — kept raw so it matches
+				# GSTR-2B) or the FY-qualified form (legacy PIs created before
+				# that change).
 				if is_taxable and not existing_name_purchase:
 					existing_name_purchase = frappe.db.get_value(
 						"Purchase Invoice",
 						{
-							"bill_no": qualified_invoice_no,
+							"bill_no": ["in", [invoice_no, qualified_invoice_no]],
 							"supplier": ecommerce_mapping.inter_company_supplier,
 							"docstatus": ["!=", 2],
 						},
@@ -2766,7 +2769,14 @@ class EcommerceBillImport(Document):
 					if not frappe.db.exists(_pi_doctype, qualified_invoice_no):
 						pi_doc._ecom_name = qualified_invoice_no
 					if is_taxable:
-						pi_doc.bill_no = qualified_invoice_no
+						# Use the raw Amazon invoice number (not FY-qualified) so it
+						# matches the supplier invoice as it appears in GSTR-2B.
+						# Amazon's invoice numbers already embed their own FY/series
+						# identifier, so they're unique without our 26- prefix.
+						# Cross-FY name collisions are still handled by
+						# bns_inter_company_reference + the SI/PI _ecom_name
+						# (qualified_invoice_no).
+						pi_doc.bill_no = invoice_no
 
 					# Link to the source SI/DN when BNS branch accounting is in
 					# effect for this posting_date. Pre-cutoff or BNS-not-installed:
