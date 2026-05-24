@@ -2702,8 +2702,18 @@ class EcommerceBillImport(Document):
 						if not wh:
 							raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
 
+						# Destination FC address — stamped as customer_address on the
+						# DN/SI (Billing Address Name). Otherwise ERPNext auto-fills
+						# from the inter-company customer's primary address, which is
+						# usually the company HQ — wrong for stock-transfer reporting.
+						wh_to = next((w for w in (ecommerce_mapping.ecommerce_warehouse_mapping or [])
+							if w.ecom_warehouse_id == row.ship_to_fc), None)
+						if not wh_to:
+							raise Exception(f"Warehouse mapping not found for FC {row.ship_to_fc}")
+
 						doc.location = wh.location
 						doc.company_address = wh.erp_address
+						doc.customer_address = wh_to.erp_address
 						if row.ship_to_state:
 							state=row.ship_to_state
 							if not state_code_dict.get(normalize_state_key(state)):
@@ -2825,6 +2835,11 @@ class EcommerceBillImport(Document):
 
 						pi_doc.location = location
 						pi_doc.billing_address = com_address
+						# Supplier address = the sending FC (ship_from). Otherwise
+						# ERPNext auto-fills from the inter-company supplier's
+						# primary address (usually company HQ) — wrong for the
+						# inter-company stock-transfer leg.
+						pi_doc.supplier_address = com_address
 					
 						# if row.ship_to_state:
 						# 	pi_doc.place_of_supply = state_code_dict.get(normalize_state_key(row.ship_to_state))
