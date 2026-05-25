@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import html
+import re
 
 from india_compliance.gst_india.utils.gstin_info import get_gstin_info
 import frappe
@@ -354,6 +355,78 @@ state_code_dict = {
 
 # Reverse lookup: GSTIN state code prefix ("27") → full POS label ("27-Maharashtra")
 _gstin_code_to_pos = {v.split("-", 1)[0]: v for v in state_code_dict.values()}
+
+
+_ITEM_MAP_PATTERNS = (
+	# Stock Transfer / Flipkart short form:
+	# "Item mapping not found for SKU='' / Asin='B09N1CN2L6' (resolved='B09N1CN2L6')"
+	re.compile(r"Item mapping not found for SKU=.+?Asin='([^']+)'"),
+	# Amazon B2B/B2C/Stock Transfer short form and JioMart/CRED:
+	# "Item mapping not found for SKU: XYZ"
+	re.compile(r"Item mapping not found for SKU:\s*(\S+)"),
+	# Flipkart long form:
+	# "Item mapping not found. configured_column='fsn', resolved_sku='ABC', ..."
+	re.compile(r"Item mapping not found\..*?resolved_sku=['\"]?([^'\"\s,]+)"),
+)
+
+
+def _dedupe_item_mapping_errors(errors):
+	"""Collapse repeated 'Item mapping not found' rows by the missing
+	SKU/Asin so each unique identifier appears once with affected invoices
+	listed. All other errors pass through unchanged in their original order.
+	"""
+	if not errors:
+		return errors
+
+	bucket = {}  # sku -> {first_idx, invoices: dict(invoice_id -> count), occurrences}
+	first_seen_idx = {}  # sku -> position in output where the consolidated row goes
+	output = []
+
+	def _extract_sku(message):
+		if not message or "Item mapping not found" not in message:
+			return None
+		for pat in _ITEM_MAP_PATTERNS:
+			m = pat.search(message)
+			if m:
+				return m.group(1).strip()
+		return ""  # matched the phrase but couldn't extract — group under blank
+
+	for e in errors:
+		msg = (e or {}).get("message") or ""
+		sku = _extract_sku(msg)
+		if sku is None:
+			output.append(e)
+			continue
+		if sku not in bucket:
+			bucket[sku] = {
+				"invoices": {},
+				"occurrences": 0,
+				"sample_event": (e or {}).get("event"),
+			}
+			first_seen_idx[sku] = len(output)
+			output.append(None)  # placeholder to preserve order
+		bucket[sku]["occurrences"] += 1
+		inv = (e or {}).get("invoice_id")
+		if inv:
+			bucket[sku]["invoices"][inv] = bucket[sku]["invoices"].get(inv, 0) + 1
+
+	for sku, info in bucket.items():
+		invs = sorted(info["invoices"].keys())
+		preview = ", ".join(invs[:8]) + (f", +{len(invs) - 8} more" if len(invs) > 8 else "")
+		row = {
+			"idx": "",
+			"invoice_id": invs[0] if invs else "",
+			"message": (
+				f"Item mapping not found for {sku!r} — "
+				f"{info['occurrences']} row(s) across {len(invs)} invoice(s): {preview}. "
+				f"Add it to Ecommerce Mapping → Ecommerce Item Table."
+			),
+		}
+		if info.get("sample_event"):
+			row["event"] = info["sample_event"]
+		output[first_seen_idx[sku]] = row
+
+	return [e for e in output if e is not None]
 
 
 def _bns_internal_transfer_active(posting_date):
@@ -784,11 +857,20 @@ class EcommerceBillImport(Document):
 		The client-side `show_import_log` / error-table renderer reads from
 		`error_json` and renders the rows. Keep everything on the doc so
 		users don't have to hop to a separate Error Log.
+
+		Item-mapping-not-found errors are de-duplicated by SKU/Asin: every
+		row that hit the same missing mapping (across every platform handler
+		— Amazon B2B/B2C/Stock Transfer, Flipkart, CRED, JioMart) collapses
+		into one row listing affected invoice IDs and the total occurrence
+		count, so the user sees each missing identifier once instead of N
+		identical rows.
 		"""
 		if not errors:
 			self.error_json = ""
 			self.error_html = ""
 			return
+
+		errors = _dedupe_item_mapping_errors(errors)
 
 		try:
 			self.error_json = json.dumps(errors, default=str)
