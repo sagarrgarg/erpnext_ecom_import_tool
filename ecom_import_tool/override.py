@@ -18,6 +18,31 @@ def _force_ecom_name(doc):
 		doc.flags.name_set = True
 
 
+def _force_ecom_tax_settings(doc):
+	"""For ecom-imported docs, force tax rows to inc_print=0 and clear
+	taxes_and_charges before every validate / calc pass.
+
+	Marketplace CSVs (Amazon B2B/B2C/Stock Transfer, Flipkart, CRED, JioMart)
+	export `taxable_value` as a PRE-tax basis — our import passes
+	`rate = taxable_value / qty` and stamps tax rows with our explicit
+	accounts. If the company's Sales template happens to have
+	`included_in_print_rate=1` (rate treated as tax-INCLUSIVE), ERPNext
+	would derive net = rate / (1 + tax%) instead of net = rate, and the
+	inter-company PI/PR pair (whose Purchase template has inc_print=0)
+	would compute a different net from the same row — tripping BNS'
+	SI-PI parity check with diffs like SI taxable 671.24 vs PI 751.79.
+
+	Gated on `custom_ecommerce_operator` being set so non-ecom docs (manual
+	SIs, regular sales) keep whatever the user configured on their template.
+	"""
+	if not doc.get("custom_ecommerce_operator"):
+		return
+	doc.taxes_and_charges = ""
+	for t in doc.get("taxes") or []:
+		t.included_in_print_rate = 0
+		t.included_in_paid_amount = 0
+
+
 class _BilledTaxCalc(_BaseCalc):
 	"""Honor caller-stamped per-item tax rates from the source CSV.
 
@@ -43,7 +68,12 @@ class CustomSalesInvoice(SalesInvoice):
 	def before_insert(self):
 		_force_ecom_name(self)
 
+	def validate(self):
+		_force_ecom_tax_settings(self)
+		super().validate()
+
 	def calculate_taxes_and_totals(self):
+		_force_ecom_tax_settings(self)
 		if self.flags.get("billed_item_tax_rates"):
 			_BilledTaxCalc(self)
 		else:
@@ -54,12 +84,24 @@ class CustomDeliveryNote(DeliveryNote):
 	def before_insert(self):
 		_force_ecom_name(self)
 
+	def validate(self):
+		_force_ecom_tax_settings(self)
+		super().validate()
+
 
 class CustomPurchaseReceipt(PurchaseReceipt):
 	def before_insert(self):
 		_force_ecom_name(self)
 
+	def validate(self):
+		_force_ecom_tax_settings(self)
+		super().validate()
+
 
 class CustomPurchaseInvoice(PurchaseInvoice):
 	def before_insert(self):
 		_force_ecom_name(self)
+
+	def validate(self):
+		_force_ecom_tax_settings(self)
+		super().validate()
