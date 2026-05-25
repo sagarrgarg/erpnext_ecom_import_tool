@@ -64,6 +64,19 @@ class _BilledTaxCalc(_BaseCalc):
 			item.item_tax_rate = json.dumps(cached) if cached else "{}"
 
 
+def _calc_for_ecom_doc(doc):
+	"""Run _BilledTaxCalc when the doc carries per-item billed tax rates from
+	the CSV import; otherwise fall back to ERPNext's stock calc. Used by every
+	Custom* class below so SI / DN / PR / PI honor the same per-item tax map
+	(matters for mixed-rate invoices — e.g. one row at 12% IGST, another at
+	5% — where the tax-row flat rate would otherwise misapply to all items).
+	"""
+	if doc.flags.get("billed_item_tax_rates"):
+		_BilledTaxCalc(doc)
+	else:
+		_BaseCalc(doc)
+
+
 class CustomSalesInvoice(SalesInvoice):
 	def before_insert(self):
 		_force_ecom_name(self)
@@ -74,10 +87,7 @@ class CustomSalesInvoice(SalesInvoice):
 
 	def calculate_taxes_and_totals(self):
 		_force_ecom_tax_settings(self)
-		if self.flags.get("billed_item_tax_rates"):
-			_BilledTaxCalc(self)
-		else:
-			_BaseCalc(self)
+		_calc_for_ecom_doc(self)
 
 
 class CustomDeliveryNote(DeliveryNote):
@@ -88,6 +98,10 @@ class CustomDeliveryNote(DeliveryNote):
 		_force_ecom_tax_settings(self)
 		super().validate()
 
+	def calculate_taxes_and_totals(self):
+		_force_ecom_tax_settings(self)
+		_calc_for_ecom_doc(self)
+
 
 class CustomPurchaseReceipt(PurchaseReceipt):
 	def before_insert(self):
@@ -97,6 +111,10 @@ class CustomPurchaseReceipt(PurchaseReceipt):
 		_force_ecom_tax_settings(self)
 		super().validate()
 
+	def calculate_taxes_and_totals(self):
+		_force_ecom_tax_settings(self)
+		_calc_for_ecom_doc(self)
+
 
 class CustomPurchaseInvoice(PurchaseInvoice):
 	def before_insert(self):
@@ -105,3 +123,7 @@ class CustomPurchaseInvoice(PurchaseInvoice):
 	def validate(self):
 		_force_ecom_tax_settings(self)
 		super().validate()
+
+	def calculate_taxes_and_totals(self):
+		_force_ecom_tax_settings(self)
+		_calc_for_ecom_doc(self)
