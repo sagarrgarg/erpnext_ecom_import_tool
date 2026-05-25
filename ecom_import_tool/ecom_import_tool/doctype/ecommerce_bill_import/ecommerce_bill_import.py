@@ -2538,6 +2538,41 @@ class EcommerceBillImport(Document):
 					existing_doc_pur = frappe.get_doc(doctype_m, existing_name_purchase)
 					if existing_doc_pur.docstatus == 0:
 						existing_doc_pur.submit()
+					# Parity check vs the source SI/DN so we don't silently skip a
+					# stale PI/PR that no longer matches the current row. Compare
+					# net_total + total_taxes_and_charges with a 1-paise tolerance.
+					if existing_name:
+						_src = frappe.db.get_value(
+							doctype, existing_name,
+							["net_total", "total_taxes_and_charges", "grand_total"],
+							as_dict=True,
+						) or {}
+						_dst = frappe.db.get_value(
+							doctype_m, existing_name_purchase,
+							["net_total", "total_taxes_and_charges", "grand_total"],
+							as_dict=True,
+						) or {}
+						_diffs = []
+						for fld in ("net_total", "total_taxes_and_charges", "grand_total"):
+							if abs(flt(_src.get(fld)) - flt(_dst.get(fld))) > 0.01:
+								_diffs.append(
+									f"{fld}: {doctype} {flt(_src.get(fld)):.2f} vs {doctype_m} {flt(_dst.get(fld)):.2f}"
+								)
+						if _diffs:
+							for idx, _ in group_rows:
+								errors.append({
+									"idx": idx,
+									"invoice_id": invoice_no,
+									"message": (
+										f"Existing {doctype_m} {existing_name_purchase} does not "
+										f"match {doctype} {existing_name}: " + "; ".join(_diffs)
+									),
+								})
+						else:
+							existing_count += len(group_rows)
+					else:
+						# No source SI/DN known to compare against; just count as existing.
+						existing_count += len(group_rows)
 
 				# Track the source SI/DN name so the inter-company PI/PR pair can
 				# link back to it (required by BNS internal-transfer rules once the
