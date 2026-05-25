@@ -356,6 +356,25 @@ state_code_dict = {
 _gstin_code_to_pos = {v.split("-", 1)[0]: v for v in state_code_dict.values()}
 
 
+def _bns_internal_transfer_active(posting_date):
+	"""True when business_needed_solutions is installed AND its internal-transfer
+	cutoff is active for `posting_date`. False if BNS isn't installed or the
+	posting falls before the cutoff (no linkage requirements).
+	"""
+	if not posting_date:
+		return False
+	try:
+		from business_needed_solutions.bns_branch_accounting.utils import (
+			is_after_internal_transfer_cutoff,
+		)
+	except Exception:
+		return False
+	try:
+		return bool(is_after_internal_transfer_cutoff(posting_date))
+	except Exception:
+		return False
+
+
 def reclassify_gst_by_seller_state(seller_gstin, ship_to_state,
                                     cgst_rate, sgst_rate, utgst_rate, igst_rate,
                                     cgst_tax, sgst_tax, utgst_tax, igst_tax):
@@ -2504,6 +2523,11 @@ class EcommerceBillImport(Document):
 					if existing_doc_pur.docstatus == 0:
 						existing_doc_pur.submit()
 
+				# Track the source SI/DN name so the inter-company PI/PR pair can
+				# link back to it (required by BNS internal-transfer rules once the
+				# cutoff date is active; harmless otherwise).
+				source_name = existing_name or None
+
 				# -------- Create Sales Invoice or Delivery Note --------
 				if not existing_name:
 					doc = frappe.new_doc(doctype)
@@ -2581,6 +2605,7 @@ class EcommerceBillImport(Document):
 					_amazon_save_and_submit(doc, mode_of_payment=None)
 					frappe.db.commit()
 					success_count += len(group_rows)
+					source_name = doc.name
 					frappe.msgprint(f"{doc.doctype} {doc.name} created for Invoice No {invoice_no}")
 
 				# -------- Inter-company: Purchase Invoice or Receipt --------
@@ -2599,11 +2624,34 @@ class EcommerceBillImport(Document):
 					pi_doc.customer = customer
 					pi_doc.custom_ecommerce_operator = self.ecommerce_mapping
 					pi_doc.custom_ecommerce_type = self.amazon_type
+					# Always carry stock on the inter-company PI (BNS' stock-update
+					# validation bypasses PI when update_stock=1; PR doesn't have
+					# the field but always carries stock anyway).
+					if is_taxable:
+						pi_doc.update_stock = 1
 					_pi_doctype = "Purchase Invoice" if is_taxable else "Purchase Receipt"
 					if not frappe.db.exists(_pi_doctype, qualified_invoice_no):
 						pi_doc._ecom_name = qualified_invoice_no
 					if is_taxable:
 						pi_doc.bill_no = qualified_invoice_no
+
+					# Link to the source SI/DN when BNS branch accounting is in
+					# effect for this posting_date. Pre-cutoff or BNS-not-installed:
+					# linkage is harmless to skip.
+					_bns_link_source = (
+						source_name
+						if _bns_internal_transfer_active(invoice_dt.date())
+						else None
+					)
+					if _bns_link_source:
+						pi_doc.bns_inter_company_reference = _bns_link_source
+					_source_items_iter = None
+					if _bns_link_source:
+						try:
+							_source_doc = frappe.get_doc(doctype, _bns_link_source)
+							_source_items_iter = iter(_source_doc.items or [])
+						except Exception:
+							_source_items_iter = None
 					warehouse = None
 					location = None
 					com_address = None
@@ -2663,6 +2711,18 @@ class EcommerceBillImport(Document):
 							custom_ecom_item_id="",
 							taxes=tax_tuples,
 						)
+
+						# Per-row link to the corresponding source SI/DN row. Row
+						# order matches because both legs were built from the same
+						# group_rows iterator in the same sequence.
+						if _source_items_iter is not None:
+							_src_item = next(_source_items_iter, None)
+							if _src_item and pi_doc.items:
+								_appended = pi_doc.items[-1]
+								if is_taxable:
+									_appended.sales_invoice_item = _src_item.name
+								else:
+									_appended.delivery_note_item = _src_item.name
 
 					_amazon_save_and_submit(pi_doc, mode_of_payment=None)
 					frappe.db.commit()
