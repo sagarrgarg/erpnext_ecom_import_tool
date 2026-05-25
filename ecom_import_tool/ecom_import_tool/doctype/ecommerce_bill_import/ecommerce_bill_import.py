@@ -2511,6 +2511,22 @@ class EcommerceBillImport(Document):
 					doctype_m, invoice_no, _inv_posting_date,
 					is_return=0, docstatus=["!=", 2],
 				)
+				# Also lookup by bill_no for taxable PIs — a prior import may have
+				# created the PI with an auto-named naming-series name (e.g.
+				# PI360226-0006) but stamped bill_no = qualified_invoice_no. The
+				# name-based lookup above misses those, so we'd retry creation and
+				# trip ERPNext's "Supplier Invoice No exists in Purchase Invoice X"
+				# duplicate-bill_no check. Honor the existing one instead.
+				if is_taxable and not existing_name_purchase:
+					existing_name_purchase = frappe.db.get_value(
+						"Purchase Invoice",
+						{
+							"bill_no": qualified_invoice_no,
+							"supplier": ecommerce_mapping.inter_company_supplier,
+							"docstatus": ["!=", 2],
+						},
+						"name",
+					)
 
 				if existing_name:
 					existing_doc = frappe.get_doc(doctype, existing_name)
