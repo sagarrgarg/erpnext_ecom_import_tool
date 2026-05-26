@@ -2571,6 +2571,13 @@ class EcommerceBillImport(Document):
 			if not invoice_no:
 				continue
 
+			# Skip cancellation rows — they reverse a prior transaction with
+			# no net stock or invoice effect to record on this side. Matches
+			# the Amazon B2B/B2C pattern of filtering Cancel/Refund types.
+			txn_type = (row.transaction_type or "").strip()
+			if txn_type == "FC_REMOVAL-Cancel":
+				continue
+
 			invoice_groups.setdefault(invoice_no, []).append((idx, row))
 
 		expected_invoices = len(invoice_groups)
@@ -2720,14 +2727,23 @@ class EcommerceBillImport(Document):
 						# DN/SI (Billing Address Name). Otherwise ERPNext auto-fills
 						# from the inter-company customer's primary address, which is
 						# usually the company HQ — wrong for stock-transfer reporting.
-						wh_to = next((w for w in (ecommerce_mapping.ecommerce_warehouse_mapping or [])
-							if w.ecom_warehouse_id == row.ship_to_fc), None)
-						if not wh_to:
-							raise Exception(f"Warehouse mapping not found for FC {row.ship_to_fc}")
+						# FC_REMOVAL leaves ship_to_fc blank (Amazon returns stock to
+						# the seller's own warehouse): fall back to the mapping's
+						# default_company_address. Only raise when ship_to_fc has a
+						# value but isn't in the warehouse mapping.
+						ship_to_fc = (row.ship_to_fc or "").strip()
+						if ship_to_fc:
+							wh_to = next((w for w in (ecommerce_mapping.ecommerce_warehouse_mapping or [])
+								if w.ecom_warehouse_id == ship_to_fc), None)
+							if not wh_to:
+								raise Exception(f"Warehouse mapping not found for FC {ship_to_fc}")
+							customer_address = wh_to.erp_address
+						else:
+							customer_address = ecommerce_mapping.default_company_address
 
 						doc.location = wh.location
 						doc.company_address = wh.erp_address
-						doc.customer_address = wh_to.erp_address
+						doc.customer_address = customer_address
 						if row.ship_to_state:
 							state=row.ship_to_state
 							if not state_code_dict.get(normalize_state_key(state)):
