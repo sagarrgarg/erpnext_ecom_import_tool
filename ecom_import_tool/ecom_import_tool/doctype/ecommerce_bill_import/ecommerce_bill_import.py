@@ -1215,12 +1215,26 @@ class EcommerceBillImport(Document):
 					suborder_to_ee_inv[sub] = ee_inv
 
 			refund_path = resolve_file_path(self.cred_refund_attach)
-			try:
-				rdf = pd.read_excel(refund_path, sheet_name="Refund", dtype=str, keep_default_na=False)
-			except (ValueError, KeyError):
+			# CRED has rotated this sheet's name across export templates:
+			# 'Refund' (legacy) → 'Return' / 'Returns' (current). Try each in
+			# order; fall through with a diagnostic listing actual sheet names.
+			rdf = None
+			refund_sheet_candidates = ("Refund", "Return", "Returns")
+			for _sheet in refund_sheet_candidates:
+				try:
+					rdf = pd.read_excel(refund_path, sheet_name=_sheet, dtype=str, keep_default_na=False)
+					break
+				except (ValueError, KeyError):
+					continue
+			if rdf is None:
+				try:
+					present_sheets = pd.ExcelFile(refund_path).sheet_names
+				except Exception:
+					present_sheets = []
 				frappe.throw(
-					"CRED Refund XLSX is missing the 'Refund' sheet. "
-					"Re-export from CRED Mail Report and try again."
+					f"CRED Refund XLSX has none of the expected sheets "
+					f"({', '.join(refund_sheet_candidates)}). Sheets present: {present_sheets!r}. "
+					f"Re-export from CRED Mail Report and try again."
 				)
 
 			refund_col_map = {normalize_col(c): c for c in rdf.columns}
@@ -3646,23 +3660,50 @@ class EcommerceBillImport(Document):
 		# Suborder No. We prefer XLSX when present, fall back to CSV otherwise.
 		xlsx_warehouse_by_order_item = {}
 		if self.cred_refund_attach:
+			xlsx_path = resolve_file_path(self.cred_refund_attach)
 			try:
-				xlsx_path = resolve_file_path(self.cred_refund_attach)
 				sdf = pd.read_excel(xlsx_path, sheet_name="Sales", dtype=str, keep_default_na=False)
+			except (ValueError, KeyError):
+				try:
+					present_sheets = pd.ExcelFile(xlsx_path).sheet_names
+				except Exception:
+					present_sheets = []
+				frappe.throw(
+					f"CRED Mail Report XLSX is missing the 'Sales' sheet. "
+					f"Sheets present: {present_sheets!r}. Re-export the CRED Mail Report."
+				)
 
-				# Strip backtick defensively in case CRED uses the same prefix on XLSX side.
-				def _strip_tick(v):
-					s = (str(v) or "").strip()
-					return s[1:] if s.startswith("`") else s
+			# Build normalized column map so column renames (e.g.
+			# CRED_Order_Item_Id → order_item_id) don't break the lookup. CRED
+			# rotates header casing/spelling across export templates; accept
+			# both the legacy and current names.
+			sales_col_map = {normalize_col(c): c for c in sdf.columns}
+			oid_col = sales_col_map.get("cred_order_item_id") or sales_col_map.get("order_item_id")
+			wlc_col = sales_col_map.get("warehouse_location_code")
+			if not oid_col or not wlc_col:
+				frappe.throw(
+					f"CRED Mail Report XLSX 'Sales' sheet is missing expected columns. "
+					f"Need an order-item-id column (cred_order_item_id / order_item_id) and "
+					f"a warehouse_location_code column. Columns present: {list(sdf.columns)!r}."
+				)
 
-				for _, srow in sdf.iterrows():
-					cred_oid = _strip_tick(srow.get("CRED_Order_Item_Id", ""))
-					wlc = (srow.get("Warehouse_Location_Code", "") or "").strip()
-					if cred_oid and wlc:
-						xlsx_warehouse_by_order_item[cred_oid] = wlc
-			except Exception:
-				# XLSX may be missing the Sales sheet or unreadable — fall back to CSV.
-				xlsx_warehouse_by_order_item = {}
+			# Strip backtick defensively in case CRED uses the same prefix on XLSX side.
+			def _strip_tick(v):
+				s = (str(v) or "").strip()
+				return s[1:] if s.startswith("`") else s
+
+			for _, srow in sdf.iterrows():
+				cred_oid = _strip_tick(srow.get(oid_col, ""))
+				wlc = (srow.get(wlc_col, "") or "").strip()
+				if cred_oid and wlc:
+					xlsx_warehouse_by_order_item[cred_oid] = wlc
+
+			if not xlsx_warehouse_by_order_item:
+				frappe.throw(
+					f"CRED Mail Report XLSX 'Sales' sheet had no usable rows "
+					f"(scanned {len(sdf)} row(s), 0 mapped to a warehouse). "
+					f"Re-export the file."
+				)
 
 		def get_place_of_supply(state_name: str):
 			"""Resolve state name to place_of_supply code using state_code_dict."""
