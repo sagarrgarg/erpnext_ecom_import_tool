@@ -2572,10 +2572,11 @@ class EcommerceBillImport(Document):
 				continue
 
 			# Skip cancellation rows — they reverse a prior transaction with
-			# no net stock or invoice effect to record on this side. Matches
-			# the Amazon B2B/B2C pattern of filtering Cancel/Refund types.
+			# no net stock or invoice effect to record on this side. Catches
+			# FC_REMOVAL-Cancel, FC_TRANSFER-Cancel, and the generic "Cancel"
+			# transaction type (mirrors the Amazon B2B/B2C filter pattern).
 			txn_type = (row.transaction_type or "").strip()
-			if txn_type == "FC_REMOVAL-Cancel":
+			if txn_type == "Cancel" or txn_type.endswith("-Cancel"):
 				continue
 
 			invoice_groups.setdefault(invoice_no, []).append((idx, row))
@@ -2835,9 +2836,6 @@ class EcommerceBillImport(Document):
 							_source_items_iter = iter(_source_doc.items or [])
 						except Exception:
 							_source_items_iter = None
-					warehouse = None
-					location = None
-					com_address = None
 					for idx, row in group_rows:
 						sku_value = (
 							row.get(ecommerce_mapping.ecom_sku_column_header)
@@ -2849,28 +2847,40 @@ class EcommerceBillImport(Document):
 						if not item_code:
 							raise Exception(f"Item mapping not found for SKU={row.sku!r} / Asin={row.asin!r} (resolved={sku_value!r})")
 
-						wh = next((wh for wh in (ecommerce_mapping.ecommerce_warehouse_mapping or [])
-							if wh.ecom_warehouse_id == row.ship_from_fc), None)
-						if not wh:
+						# Source FC (ship_from) — supplier's side, only used here for
+						# supplier_address on the PI/PR.
+						wh_from = next((w for w in (ecommerce_mapping.ecommerce_warehouse_mapping or [])
+							if w.ecom_warehouse_id == row.ship_from_fc), None)
+						if not wh_from:
 							raise Exception(f"Warehouse mapping not found for FC {row.ship_from_fc}")
-						if wh:
-							warehouse = wh.erp_warehouse
-							location = wh.location
-							com_address = wh.erp_address
 
-						if not row.ship_from_fc:
-							warehouse=ecommerce_mapping.default_company_warehouse
-							location = ecommerce_mapping.default_company_location
-							com_address = ecommerce_mapping.default_company_address
+						# Destination FC (ship_to) — where the company actually
+						# receives stock. Drives the PI/PR's receiving warehouse,
+						# location, and billing_address (= company_gstin source).
+						# FC_REMOVAL has ship_to_fc blank: goods arrive at the
+						# seller's default warehouse.
+						ship_to_fc = (row.ship_to_fc or "").strip()
+						if ship_to_fc:
+							wh_to = next((w for w in (ecommerce_mapping.ecommerce_warehouse_mapping or [])
+								if w.ecom_warehouse_id == ship_to_fc), None)
+							if not wh_to:
+								raise Exception(f"Warehouse mapping not found for FC {ship_to_fc}")
+							dest_warehouse = wh_to.erp_warehouse
+							dest_location = wh_to.location
+							dest_address = wh_to.erp_address
+						else:
+							dest_warehouse = ecommerce_mapping.default_company_warehouse
+							dest_location = ecommerce_mapping.default_company_location
+							dest_address = ecommerce_mapping.default_company_address
 
-						pi_doc.location = location
-						pi_doc.billing_address = com_address
+						pi_doc.location = dest_location
+						pi_doc.billing_address = dest_address
 						# Supplier address = the sending FC (ship_from). Otherwise
 						# ERPNext auto-fills from the inter-company supplier's
 						# primary address (usually company HQ) — wrong for the
 						# inter-company stock-transfer leg.
-						pi_doc.supplier_address = com_address
-					
+						pi_doc.supplier_address = wh_from.erp_address
+
 						# if row.ship_to_state:
 						# 	pi_doc.place_of_supply = state_code_dict.get(normalize_state_key(row.ship_to_state))
 
@@ -2894,7 +2904,7 @@ class EcommerceBillImport(Document):
 							rate=rate,
 							hsn_code=frappe.db.get_value("Item", item_code, "gst_hsn_code") or "",
 							description="",
-							warehouse=warehouse,
+							warehouse=dest_warehouse,
 							income_account="",
 							custom_ecom_item_id="",
 							taxes=tax_tuples,
