@@ -3020,36 +3020,46 @@ class EcommerceBillImport(Document):
 					return jk.erp_item
 			return None
 
-		# Pre-build state-code → (warehouse, location, address) lookup so that
-		# rows where Flipkart sends warehouse_id='NA'/blank can still resolve
-		# the correct company_address from the row's seller_gstin (first 2
-		# digits = state code). Otherwise such rows fall back to
-		# default_company_address, which stamps the wrong company_gstin on
-		# the SI and trips India Compliance ("Cannot charge CGST/SGST for
-		# inter-state supplies") whenever the seller's actual state differs
-		# from the default address's state.
-		warehouse_by_state = {}
+		# Pre-build state-code → erp_address lookup so the SI's Bill From
+		# (company_address) can be derived from seller_gstin's state — even
+		# when Flipkart sends warehouse_id='NA'/blank. If we use the default
+		# Bill-From here instead, company_gstin ends up as the default
+		# address's GSTIN (e.g. Delhi), which mismatches the actual seller's
+		# state and trips India Compliance: "Cannot charge CGST/SGST for
+		# inter-state supplies".
+		address_by_state = {}
 		for wh in (flipkart.ecommerce_warehouse_mapping or []):
 			if not wh.erp_address:
 				continue
 			state_code = (frappe.db.get_value("Address", wh.erp_address, "gst_state_number") or "").strip()
 			if state_code:
 				# First-wins if multiple FCs share a state.
-				warehouse_by_state.setdefault(state_code, (wh.erp_warehouse, wh.location, wh.erp_address))
+				address_by_state.setdefault(state_code, wh.erp_address)
 
-		def get_warehouse_info(warehouse_id, seller_gstin=None):
+		def get_billing_address(seller_gstin):
+			"""Resolve Bill From (company_address) from seller_gstin's state
+			code (first 2 digits of GSTIN) via the state→address lookup.
+			Returns None if seller_gstin is missing or its state isn't
+			mapped — caller can then fall back to dispatch address.
+			"""
+			if not seller_gstin:
+				return None
+			seller_state = (str(seller_gstin)[:2] or "").strip()
+			return address_by_state.get(seller_state)
+
+		def get_dispatch_info(warehouse_id):
+			"""Resolve Dispatch (set_warehouse / location /
+			dispatch_address_name) from warehouse_id, falling back to the
+			Ecommerce Mapping's default warehouse/location/address when
+			Flipkart sends warehouse_id='NA' or blank.
+			Returns (warehouse, location, dispatch_address).
+			"""
 			warehouse_id = normalize_warehouse_id(warehouse_id)
 			if warehouse_id:
 				for wh in flipkart.ecommerce_warehouse_mapping:
 					if wh.ecom_warehouse_id == warehouse_id:
 						return wh.erp_warehouse, wh.location, wh.erp_address
 				raise Exception(f"Warehouse Mapping not found for Warehouse Id: {warehouse_id}")
-			# warehouse_id missing/NA — try to resolve from seller_gstin's state
-			# before falling back to default_company_address.
-			if seller_gstin:
-				seller_state = (str(seller_gstin)[:2] or "").strip()
-				if seller_state in warehouse_by_state:
-					return warehouse_by_state[seller_state]
 			return flipkart.default_company_warehouse, flipkart.default_company_location, flipkart.default_company_address
 
 		def get_gstin(seller_gstin):
@@ -3126,7 +3136,8 @@ class EcommerceBillImport(Document):
 				posting_date_val = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
 				posting_dt = datetime.combine(posting_date_val, datetime.min.time())
 
-				warehouse, location, company_address = get_warehouse_info(first.warehouse_id, first.seller_gstin)
+				warehouse, location, dispatch_address = get_dispatch_info(first.warehouse_id)
+				billing_address = get_billing_address(first.seller_gstin) or dispatch_address
 				ecommerce_gstin = get_gstin(first.seller_gstin)
 
 				draft_doc = frappe.get_doc("Sales Invoice", draft_name) if draft_name else None
@@ -3145,8 +3156,13 @@ class EcommerceBillImport(Document):
 				)
 
 				# Flipkart-specific header mutations not covered by the helper.
+				# Bill From = state-matched address from seller_gstin (drives
+				# company_gstin → IC's intra/inter check). Dispatch = warehouse_id
+				# mapping (or default), independent of seller_gstin.
 				if not si.company_address:
-					si.company_address = company_address
+					si.company_address = billing_address
+				if not si.dispatch_address_name:
+					si.dispatch_address_name = dispatch_address
 				if not si.location:
 					si.location = location
 
@@ -3192,12 +3208,15 @@ class EcommerceBillImport(Document):
 								f"or check the SKU column header on the Ecommerce Mapping."
 							)
 
-						warehouse, location, company_address = get_warehouse_info(row.warehouse_id, row.seller_gstin)
+						warehouse, location, dispatch_address = get_dispatch_info(row.warehouse_id)
+						billing_address = get_billing_address(row.seller_gstin) or dispatch_address
 						row_ecommerce_gstin = get_gstin(row.seller_gstin)
 
 						# Fill missing headers (draft invoices)
 						if not si.company_address:
-							si.company_address = company_address
+							si.company_address = billing_address
+						if not si.dispatch_address_name:
+							si.dispatch_address_name = dispatch_address
 						if not si.location:
 							si.location = location
 						if not si.ecommerce_gstin:
@@ -3378,7 +3397,8 @@ class EcommerceBillImport(Document):
 				posting_date_val = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
 				posting_dt = datetime.combine(posting_date_val, datetime.min.time())
 
-				warehouse, location, company_address = get_warehouse_info(first.warehouse_id, first.seller_gstin)
+				warehouse, location, dispatch_address = get_dispatch_info(first.warehouse_id)
+				billing_address = get_billing_address(first.seller_gstin) or dispatch_address
 				ecommerce_gstin = get_gstin(first.seller_gstin)
 
 				draft_doc = frappe.get_doc("Sales Invoice", draft_name) if draft_name else None
@@ -3395,9 +3415,12 @@ class EcommerceBillImport(Document):
 					update_stock=1,
 					draft_doc=draft_doc,
 				)
-				# Preserve Flipkart-specific header mutations not covered by helper:
+				# Preserve Flipkart-specific header mutations not covered by helper.
+				# Bill From = state-matched from seller_gstin; Dispatch = warehouse_id (or default).
 				if not si.company_address:
-					si.company_address = company_address
+					si.company_address = billing_address
+				if not si.dispatch_address_name:
+					si.dispatch_address_name = dispatch_address
 				if not si.location:
 					si.location = location
 
@@ -3443,11 +3466,14 @@ class EcommerceBillImport(Document):
 								f"or check the SKU column header on the Ecommerce Mapping."
 							)
 
-						warehouse, location, company_address = get_warehouse_info(row.warehouse_id, row.seller_gstin)
+						warehouse, location, dispatch_address = get_dispatch_info(row.warehouse_id)
+						billing_address = get_billing_address(row.seller_gstin) or dispatch_address
 						row_ecommerce_gstin = get_gstin(row.seller_gstin)
 
 						if not si.company_address:
-							si.company_address = company_address
+							si.company_address = billing_address
+						if not si.dispatch_address_name:
+							si.dispatch_address_name = dispatch_address
 						if not si.location:
 							si.location = location
 						if not si.ecommerce_gstin:
