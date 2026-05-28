@@ -3194,7 +3194,14 @@ class EcommerceBillImport(Document):
 
 				# Place of supply uses Flipkart-specific resolver (handles anonymized buyer state).
 				if not si.place_of_supply:
-					state = first.customers_delivery_state or first.customers_billing_state
+					# Prefer billing state — Flipkart's CSV classifies CGST/SGST vs
+					# IGST based on billing address (the customer's legal identity),
+					# not the delivery address. Using delivery state for POS when
+					# delivery != billing trips India Compliance with
+					# "Cannot charge CGST/SGST for inter-state supplies" on rows
+					# where Flipkart correctly stamped intra-state taxes against
+					# billing. Falls back to delivery if billing is missing.
+					state = first.customers_billing_state or first.customers_delivery_state
 					si.place_of_supply = resolve_flipkart_pos(
 						state,
 						first.seller_gstin,
@@ -3253,7 +3260,10 @@ class EcommerceBillImport(Document):
 								f"{si.ecommerce_gstin} vs {row_ecommerce_gstin}"
 							)
 						if not si.place_of_supply:
-							state = row.customers_delivery_state or row.customers_billing_state
+							# Prefer billing state — see Flipkart sales header comment
+							# above. Flipkart's tax classification is billing-based;
+							# using delivery for POS when they differ trips IC.
+							state = row.customers_billing_state or row.customers_delivery_state
 							si.place_of_supply = resolve_flipkart_pos(
 								state,
 								row.seller_gstin,
@@ -3452,7 +3462,14 @@ class EcommerceBillImport(Document):
 
 				# Place of supply uses Flipkart-specific resolver (handles anonymized buyer state).
 				if not si.place_of_supply:
-					state = first.customers_delivery_state or first.customers_billing_state
+					# Prefer billing state — Flipkart's CSV classifies CGST/SGST vs
+					# IGST based on billing address (the customer's legal identity),
+					# not the delivery address. Using delivery state for POS when
+					# delivery != billing trips India Compliance with
+					# "Cannot charge CGST/SGST for inter-state supplies" on rows
+					# where Flipkart correctly stamped intra-state taxes against
+					# billing. Falls back to delivery if billing is missing.
+					state = first.customers_billing_state or first.customers_delivery_state
 					si.place_of_supply = resolve_flipkart_pos(
 						state,
 						first.seller_gstin,
@@ -3510,7 +3527,10 @@ class EcommerceBillImport(Document):
 								f"{si.ecommerce_gstin} vs {row_ecommerce_gstin}"
 							)
 						if not si.place_of_supply:
-							state = row.customers_delivery_state or row.customers_billing_state
+							# Prefer billing state — see Flipkart sales header comment
+							# above. Flipkart's tax classification is billing-based;
+							# using delivery for POS when they differ trips IC.
+							state = row.customers_billing_state or row.customers_delivery_state
 							si.place_of_supply = resolve_flipkart_pos(
 								state,
 								row.seller_gstin,
