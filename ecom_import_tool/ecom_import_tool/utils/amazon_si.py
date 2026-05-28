@@ -221,14 +221,15 @@ def _amazon_save_and_submit(si, *, mode_of_payment, due_date=None):
 		it.item_tax_template = ""
 		it.item_tax_rate = frappe._dict()
 	# India Compliance auto-applies a state-aware Sales Taxes and Charges
-	# Template on save when the customer has a gst_category (B2B path),
-	# replacing our explicit tax rows with template rows whose
-	# included_in_print_rate=1. That makes ERPNext treat item.rate as
-	# tax-inclusive and back-extract tax from it — wrong because our
-	# rates come from tax_exclusive_gross (already pre-tax). Drop the
-	# template ref and force the flag to 0 on every tax row so save 2
-	# settles with net_amount = rate * qty.
-	si.taxes_and_charges = ""
+	# Template on save when the customer has a gst_category (B2B path).
+	# The template rows carry included_in_print_rate=1, which makes
+	# ERPNext treat item.rate as tax-inclusive and back-extract tax —
+	# wrong because our rates come from tax_exclusive_gross (already
+	# pre-tax). Force the flag to 0 on every tax row so save 2 computes
+	# net_amount = rate * qty and tax = net_amount * tax_rate%.
+	# Keep taxes_and_charges intact so IC's tax_amount stays consistent
+	# with the template's per-item GST rate (clearing it would leave the
+	# SI without proper tax classification on save 2).
 	for t in (si.get("taxes") or []):
 		t.included_in_print_rate = 0
 		t.included_in_paid_amount = 0
