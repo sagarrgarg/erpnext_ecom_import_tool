@@ -3034,11 +3034,17 @@ class EcommerceBillImport(Document):
 		customer = frappe.db.get_value("Ecommerce Mapping", {"platform": "Flipkart"}, "default_non_company_customer")
 		flipkart = frappe.get_doc("Ecommerce Mapping", "Flipkart")
 
-		# Build cashback lookup by (order_item_id, document_sub_type) for merging into sales items
+		# Build cashback lookup keyed by (order_item_id, sub_type, amount).
+		# Flipkart can split one order item across multiple buyer invoices,
+		# emitting one cashback CN per sale — all sharing the same
+		# (order_item_id, "Sale"). Adding invoice_amount to the key
+		# disambiguates: cashback.invoice_amount == abs(sale.bank_offer_share)
+		# for the matching sale row.
 		cashback_by_item = {}
 		for cb_row in (self.flipkart_cashback or []):
 			if cb_row.order_item_id and cb_row.document_sub_type:
-				cashback_by_item[(cb_row.order_item_id, cb_row.document_sub_type)] = cb_row
+				amount_key = round(flt(cb_row.invoice_amount), 2)
+				cashback_by_item[(cb_row.order_item_id, cb_row.document_sub_type, amount_key)] = cb_row
 
 		def get_item_code(ecom_sku):
 			for jk in flipkart.ecom_item_table:
@@ -3285,7 +3291,14 @@ class EcommerceBillImport(Document):
 						sgst_amt = flt(row.sgst_amount)
 						igst_amt = flt(row.igst_amount)
 
-						cb = cashback_by_item.get((row.order_item_id, "Sale"))
+						# Match cashback by Bank Offer Share (sale) == Invoice Amount
+						# (cashback). Needed because a single order_item_id can
+						# spawn multiple sales (and cashbacks) when Flipkart splits
+						# the line across buyer invoices — the abs(bank_offer_share)
+						# is the only field that ties a specific cashback CN back
+						# to its sale row.
+						bank_offer_key = round(abs(flt(row.bank_offer_share)), 2)
+						cb = cashback_by_item.get((row.order_item_id, "Sale", bank_offer_key))
 						if cb:
 							taxable += flt(cb.taxable_value)
 							cgst_amt += flt(cb.cgst_amount)
@@ -3552,7 +3565,10 @@ class EcommerceBillImport(Document):
 						sgst_amt = flt(row.sgst_amount)
 						igst_amt = flt(row.igst_amount)
 
-						cb = cashback_by_item.get((row.order_item_id, "Return"))
+						# Match by Bank Offer Share == cashback.invoice_amount —
+						# same multi-buyer-invoice disambiguation as the Sales path.
+						bank_offer_key = round(abs(flt(row.bank_offer_share)), 2)
+						cb = cashback_by_item.get((row.order_item_id, "Return", bank_offer_key))
 						if cb:
 							taxable += abs(flt(cb.taxable_value))
 							cgst_amt += flt(cb.cgst_amount)
