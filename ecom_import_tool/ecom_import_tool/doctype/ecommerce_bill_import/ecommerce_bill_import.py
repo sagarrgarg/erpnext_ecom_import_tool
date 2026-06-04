@@ -1530,6 +1530,31 @@ class EcommerceBillImport(Document):
 				if not customer:
 					customer=frappe.db.get_value("Ecommerce Mapping", "Amazon", "default_non_company_customer")
 
+				# IC throws "Party GSTIN ... is cancelled on ..." at submit when the
+				# customer's GSTIN was cancelled on/before the invoice date. Detect
+				# that upfront against the local GSTIN doctype (same source IC's
+				# synchronous validator reads from) and fall back to the B2C
+				# default customer so the bill posts instead of failing the import.
+				if customer:
+					_cust_gstin = frappe.db.get_value("Customer", customer, "gstin")
+					if _cust_gstin and frappe.db.exists("GSTIN", _cust_gstin):
+						_gstin_row = frappe.db.get_value(
+							"GSTIN", _cust_gstin,
+							["status", "cancelled_date"], as_dict=True
+						)
+						if (_gstin_row
+							and _gstin_row.status == "Cancelled"
+							and _gstin_row.cancelled_date):
+							_inv_check_dt = parse_export_datetime(items_data[0][1].get("invoice_date"))
+							if (_inv_check_dt
+								and getdate(_inv_check_dt) >= getdate(_gstin_row.cancelled_date)):
+								customer = frappe.db.get_value(
+									"Ecommerce Mapping",
+									self.ecommerce_mapping,
+									"default_non_company_customer",
+								)
+								status = None
+
 				# Amazon reuses invoice numbers across fiscal years; FY-qualify the
 				# name so re-imports of next-FY data with the same invoice_no don't
 				# silently match a prior-year SI.
