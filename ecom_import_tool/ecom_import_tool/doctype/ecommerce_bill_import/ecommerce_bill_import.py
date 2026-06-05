@@ -2769,7 +2769,9 @@ class EcommerceBillImport(Document):
 
 						doc.location = wh.location
 						doc.company_address = wh.erp_address
+						doc.dispatch_address_name = wh.erp_address
 						doc.customer_address = customer_address
+						doc.shipping_address_name = customer_address
 						if row.ship_to_state:
 							state=row.ship_to_state
 							if not state_code_dict.get(normalize_state_key(state)):
@@ -2900,11 +2902,14 @@ class EcommerceBillImport(Document):
 
 						pi_doc.location = dest_location
 						pi_doc.billing_address = dest_address
+						pi_doc.shipping_address = dest_address
 						# Supplier address = the sending FC (ship_from). Otherwise
 						# ERPNext auto-fills from the inter-company supplier's
 						# primary address (usually company HQ) — wrong for the
-						# inter-company stock-transfer leg.
+						# inter-company stock-transfer leg. dispatch_address tracks
+						# where the supplier ships from (also source FC).
 						pi_doc.supplier_address = wh_from.erp_address
+						pi_doc.dispatch_address = wh_from.erp_address
 
 						# if row.ship_to_state:
 						# 	pi_doc.place_of_supply = state_code_dict.get(normalize_state_key(row.ship_to_state))
