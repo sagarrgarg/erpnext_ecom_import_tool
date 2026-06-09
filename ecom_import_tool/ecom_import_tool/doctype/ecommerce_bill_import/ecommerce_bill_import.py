@@ -2650,15 +2650,26 @@ class EcommerceBillImport(Document):
 				# GSTR-2B) or the FY-qualified form (legacy PIs created before
 				# that change).
 				if is_taxable and not existing_name_purchase:
-					existing_name_purchase = frappe.db.get_value(
+					# Same FY scope: bill_no alone collides across fiscal years (Amazon
+					# reuses transfer invoice numbers) and across orphan PIs whose
+					# source SI was cancelled. Match only PIs whose posting_date is
+					# in the same FY as the row being imported, so a stale prior-year
+					# (or orphan) PI doesn't shadow a freshly-created SI's pair.
+					_pi_candidates = frappe.db.get_all(
 						"Purchase Invoice",
-						{
+						filters={
 							"bill_no": ["in", [invoice_no, qualified_invoice_no]],
 							"supplier": ecommerce_mapping.inter_company_supplier,
 							"docstatus": ["!=", 2],
 						},
-						"name",
+						fields=["name", "posting_date"],
 					)
+					_lookup_fy_end = _fiscal_year_end(_inv_posting_date)
+					for _c in _pi_candidates:
+						_cand_fy_end = _fiscal_year_end(_c.posting_date)
+						if _lookup_fy_end and _cand_fy_end and _lookup_fy_end == _cand_fy_end:
+							existing_name_purchase = _c.name
+							break
 
 				if existing_name:
 					existing_doc = frappe.get_doc(doctype, existing_name)
