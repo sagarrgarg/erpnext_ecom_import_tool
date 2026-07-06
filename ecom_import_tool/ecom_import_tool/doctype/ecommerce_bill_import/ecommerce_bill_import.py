@@ -546,6 +546,25 @@ def qualify_with_fy(name, posting_date):
 	return f"{prefix}-{name_str}"
 
 
+def purchase_ecom_name(qualified_invoice_no, is_taxable):
+	"""Docname for the inter-company *purchase* leg (PI/PR) of a stock transfer.
+
+	Prefixed with 'PI-' / 'PR-' so it never shares a name with the sales leg
+	(SI/DN), which is named `qualified_invoice_no` verbatim. Without the prefix
+	both legs post to the GL under the same voucher_no, so ledger reconciliation
+	can't tell the sales side from the purchase side of the same transfer.
+
+	Idempotent: returns the name unchanged if it already carries the prefix.
+	"""
+	if not qualified_invoice_no:
+		return qualified_invoice_no
+	prefix = "PI-" if is_taxable else "PR-"
+	name_str = str(qualified_invoice_no)
+	if name_str.startswith(prefix):
+		return name_str
+	return f"{prefix}{name_str}"
+
+
 def find_existing_amazon_doc(doctype, name, posting_date, **filters):
 	"""Find existing doc of `doctype` trying FY-qualified name first, falling
 	back to the legacy unprefixed name *only when the candidate's posting_date
@@ -2631,12 +2650,20 @@ class EcommerceBillImport(Document):
 				_inv_dt = parse_export_datetime(group_rows[0][1].get("invoice_date"))
 				_inv_posting_date = _inv_dt.date() if _inv_dt else None
 				qualified_invoice_no = qualify_with_fy(invoice_no, _inv_posting_date)
+				qualified_purchase_no = purchase_ecom_name(qualified_invoice_no, is_taxable)
 
 				existing_name = find_existing_amazon_doc(
 					doctype, invoice_no, _inv_posting_date,
 					is_return=0, docstatus=["!=", 2],
 				)
-				existing_name_purchase = find_existing_amazon_doc(
+				# Match the prefixed purchase name (PI-/PR-) first, then fall back to
+				# the legacy unprefixed name for purchase docs created before the
+				# prefix existed (they used to share the sales-side name).
+				existing_name_purchase = frappe.db.get_value(
+					doctype_m,
+					{"name": qualified_purchase_no, "is_return": 0, "docstatus": ["!=", 2]},
+					"name",
+				) or find_existing_amazon_doc(
 					doctype_m, invoice_no, _inv_posting_date,
 					is_return=0, docstatus=["!=", 2],
 				)
@@ -2845,8 +2872,8 @@ class EcommerceBillImport(Document):
 					if is_taxable:
 						pi_doc.update_stock = 1
 					_pi_doctype = "Purchase Invoice" if is_taxable else "Purchase Receipt"
-					if not frappe.db.exists(_pi_doctype, qualified_invoice_no):
-						pi_doc._ecom_name = qualified_invoice_no
+					if not frappe.db.exists(_pi_doctype, qualified_purchase_no):
+						pi_doc._ecom_name = qualified_purchase_no
 					if is_taxable:
 						# Use the raw Amazon invoice number (not FY-qualified) so it
 						# matches the supplier invoice as it appears in GSTR-2B.
