@@ -4,6 +4,7 @@
 from frappe.tests.utils import FrappeTestCase
 
 from ecom_import_tool.ecom_import_tool.doctype.ecommerce_bill_import.ecommerce_bill_import import (
+	purchase_ecom_name,
 	safe_refund_qty_rate,
 )
 
@@ -98,3 +99,33 @@ class TestSafeRefundQtyRate(FrappeTestCase):
 		rows = [(3, 300), (1, 100)]
 		all_zero = all(safe_refund_qty_rate(q, a)[2] for q, a in rows)
 		self.assertFalse(all_zero)
+
+
+class TestPurchaseEcomName(FrappeTestCase):
+	"""Tests for purchase_ecom_name — the inter-company stock-transfer purchase
+	leg (PI/PR) must NOT share a docname with the sales leg (SI/DN), otherwise
+	both post to the GL under the same voucher_no and can't be told apart.
+	"""
+
+	def test_taxable_gets_pi_prefix(self):
+		self.assertEqual(purchase_ecom_name("26-DEL5-2", True), "PI-26-DEL5-2")
+
+	def test_non_taxable_gets_pr_prefix(self):
+		self.assertEqual(purchase_ecom_name("26-DEL5-2", False), "PR-26-DEL5-2")
+
+	def test_never_equals_sales_name(self):
+		sales_name = "26-DEL5-2"
+		self.assertNotEqual(purchase_ecom_name(sales_name, True), sales_name)
+		self.assertNotEqual(purchase_ecom_name(sales_name, False), sales_name)
+
+	def test_idempotent_pi(self):
+		self.assertEqual(purchase_ecom_name("PI-26-DEL5-2", True), "PI-26-DEL5-2")
+
+	def test_idempotent_pr(self):
+		self.assertEqual(purchase_ecom_name("PR-26-DEL5-2", False), "PR-26-DEL5-2")
+
+	def test_blank_passthrough(self):
+		self.assertEqual(purchase_ecom_name("", True), "")
+
+	def test_none_passthrough(self):
+		self.assertIsNone(purchase_ecom_name(None, False))
