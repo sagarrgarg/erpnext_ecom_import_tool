@@ -4,6 +4,7 @@
 from frappe.tests.utils import FrappeTestCase
 
 from ecom_import_tool.ecom_import_tool.doctype.ecommerce_bill_import.ecommerce_bill_import import (
+	_assert_str_dest_not_collapsed,
 	purchase_ecom_name,
 	safe_refund_qty_rate,
 )
@@ -129,3 +130,34 @@ class TestPurchaseEcomName(FrappeTestCase):
 
 	def test_none_passthrough(self):
 		self.assertIsNone(purchase_ecom_name(None, False))
+
+
+class TestStrDestNotCollapsed(FrappeTestCase):
+	"""Guard that refuses an inter-company stock-transfer leg whose receiving
+	address collapsed onto the source FC (destination defaulted to source),
+	while still allowing a shared Address deliberately mapped to two FCs.
+	"""
+
+	def test_shared_address_two_distinct_fcs_allowed(self):
+		# HYD8 -> HYD3, both mapped to one 'HYD8_HYD3' Address: intentional, allowed.
+		_assert_str_dest_not_collapsed("T1", "HYD8", "HYD3", "HYD8_HYD3", "HYD8_HYD3")
+
+	def test_normal_distinct_addresses_allowed(self):
+		_assert_str_dest_not_collapsed("T2", "DEL4", "DEL5", "DEL4", "DEL5")
+
+	def test_fc_removal_to_distinct_default_allowed(self):
+		# blank ship_to, default is a real different warehouse: legitimate.
+		_assert_str_dest_not_collapsed("T3", "DEL4", "", "DEL4", "OwnWH")
+
+	def test_default_collapse_raises(self):
+		# blank ship_to and default fell back onto the source FC address.
+		with self.assertRaises(Exception):
+			_assert_str_dest_not_collapsed("T4", "DEL4", "", "DEL4", "DEL4")
+
+	def test_self_transfer_raises(self):
+		with self.assertRaises(Exception):
+			_assert_str_dest_not_collapsed("T5", "DEL4", "DEL4", "DEL4", "DEL4")
+
+	def test_no_collapse_when_addresses_differ(self):
+		# dest != src is always fine regardless of FCs.
+		_assert_str_dest_not_collapsed("T6", "DEL4", "DEL4", "DEL4", "DEL5")

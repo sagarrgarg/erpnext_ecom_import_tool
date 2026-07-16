@@ -565,6 +565,39 @@ def purchase_ecom_name(qualified_invoice_no, is_taxable):
 	return f"{prefix}{name_str}"
 
 
+def _assert_str_dest_not_collapsed(invoice_no, ship_from_fc, ship_to_fc, src_address, dest_address):
+	"""Refuse to create an inter-company stock-transfer leg whose receiving
+	(destination) address silently collapsed onto the sending (source) FC's
+	address.
+
+	This is the "destination defaulted to source" bug: pre-fix docs where the
+	billing/customer address fell back to the ship-from FC. We stop it at import
+	time instead of producing a document that shows the same address on both
+	sides.
+
+	A shared Address deliberately mapped to two *distinct* FCs (e.g. HYD8/HYD3
+	both pointing at one 'HYD8_HYD3' Address) is intentional and allowed — there
+	dest_address == src_address but ship_to_fc is a real, different FC. We only
+	throw when the destination was NOT an explicit different FC: either it fell
+	back to the default (blank/unmapped ship_to_fc) or ship_to_fc == ship_from_fc.
+	"""
+	if not (dest_address and dest_address == src_address):
+		return
+	st = (ship_to_fc or "").strip()
+	sf = (ship_from_fc or "").strip()
+	if not st:
+		raise Exception(
+			f"Stock transfer {invoice_no}: destination address defaulted to the "
+			f"source FC {sf!r} (receiving address == supplier address "
+			f"{dest_address!r}). Set a valid ship-to FC / address before importing."
+		)
+	if st == sf:
+		raise Exception(
+			f"Stock transfer {invoice_no}: ship-to FC equals ship-from FC {sf!r}; "
+			f"refusing to create a self-transfer with identical from/to address."
+		)
+
+
 def find_existing_amazon_doc(doctype, name, posting_date, **filters):
 	"""Find existing doc of `doctype` trying FY-qualified name first, falling
 	back to the legacy unprefixed name *only when the candidate's posting_date
@@ -2805,6 +2838,14 @@ class EcommerceBillImport(Document):
 						else:
 							customer_address = ecommerce_mapping.default_company_address
 
+						# Stop before creating anything if the receiving address
+						# collapsed onto the source FC (destination defaulted to
+						# source). Runs on the SI/DN leg so no orphan doc is left.
+						_assert_str_dest_not_collapsed(
+							invoice_no, row.ship_from_fc, ship_to_fc,
+							wh.erp_address, customer_address,
+						)
+
 						doc.location = wh.location
 						doc.company_address = wh.erp_address
 						doc.dispatch_address_name = wh.erp_address
@@ -2875,14 +2916,13 @@ class EcommerceBillImport(Document):
 					if not frappe.db.exists(_pi_doctype, qualified_purchase_no):
 						pi_doc._ecom_name = qualified_purchase_no
 					if is_taxable:
-						# Use the raw Amazon invoice number (not FY-qualified) so it
-						# matches the supplier invoice as it appears in GSTR-2B.
-						# Amazon's invoice numbers already embed their own FY/series
-						# identifier, so they're unique without our 26- prefix.
-						# Cross-FY name collisions are still handled by
-						# bns_inter_company_reference + the SI/PI _ecom_name
-						# (qualified_invoice_no).
-						pi_doc.bill_no = invoice_no
+						# Supplier Invoice No (bill_no) is FY-qualified (e.g.
+						# 26-DEL4-T-11, not the raw DEL4-T-11) so it never collides
+						# across fiscal years — Amazon reuses transfer invoice numbers
+						# each year. The existing-PI lookup above already matches both
+						# the raw and the FY-qualified bill_no, so this stays idempotent
+						# for PIs created under the old (raw) convention.
+						pi_doc.bill_no = qualified_invoice_no
 
 					# Link to the source SI/DN when BNS branch accounting is in
 					# effect for this posting_date. Pre-cutoff or BNS-not-installed:
@@ -2938,6 +2978,13 @@ class EcommerceBillImport(Document):
 							dest_location = ecommerce_mapping.default_company_location
 							dest_address = ecommerce_mapping.default_company_address
 
+						# Mirror of the SI/DN guard: catches the collapse on a re-run
+						# that creates only the purchase leg (source SI/DN pre-exists).
+						_assert_str_dest_not_collapsed(
+							invoice_no, row.ship_from_fc, ship_to_fc,
+							wh_from.erp_address, dest_address,
+						)
+
 						pi_doc.location = dest_location
 						pi_doc.billing_address = dest_address
 						pi_doc.shipping_address = dest_address
@@ -2991,6 +3038,21 @@ class EcommerceBillImport(Document):
 									_appended.delivery_note_item = _src_item.name
 
 					_amazon_save_and_submit(pi_doc, mode_of_payment=None)
+					frappe.db.commit()
+
+				# Back-reference the sales leg with the prefixed PI/PR name so the
+				# internal-transfer link is navigable from both sides (before, only
+				# PI/PR -> SI/DN was stamped). DN.bns_inter_company_reference is a
+				# Link -> Purchase Receipt; SI's is Data. db_set bypasses
+				# allow_on_submit and touches no GL. Covers both a freshly-created
+				# and a pre-existing purchase doc; gated on BNS being active.
+				_purchase_name = pi_doc.name if not existing_name_purchase else existing_name_purchase
+				if source_name and _purchase_name and _bns_internal_transfer_active(_inv_posting_date):
+					frappe.db.set_value(
+						doctype, source_name,
+						"bns_inter_company_reference", _purchase_name,
+						update_modified=False,
+					)
 					frappe.db.commit()
 
 			except Exception as e:
