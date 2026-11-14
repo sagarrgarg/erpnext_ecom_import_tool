@@ -54,8 +54,11 @@ def normalize_state_key(state):
     if not state:
         return ""
     key = str(state).strip().lower()
+    key = key.replace("&", " and ")  # "J&K", "Daman & Diu"
+    key = key.strip(" .,;")          # "Kerala." / trailing commas from exports
     key = " ".join(key.split())      # collapse multiple spaces/newlines
-    key = key.replace("&", "and")    # optional, helps for "&" cases
+    if key.startswith("in-") and len(key) <= 5:  # ISO 3166-2 code, e.g. IN-KL
+        key = key[3:]
     return key
 
 
@@ -353,8 +356,64 @@ state_code_dict = {
 }
 
 
+# Other names the marketplaces use (Amazon, Flipkart, Jio Mart, CRED): new and old official names,
+# the pre-2020 Union Territories (merged into 26), common spellings, and short state codes.
+_STATE_ALIASES = {
+    "01-Jammu and Kashmir": ("jammu kashmir", "jandk", "j and k", "jk"),
+    "02-Himachal Pradesh": ("hp",),
+    "03-Punjab": ("pb",),
+    "04-Chandigarh": ("ch",),
+    "05-Uttarakhand": ("uttaranchal", "uk", "ut"),
+    "06-Haryana": ("hr",),
+    "07-Delhi": ("new delhi", "nct of delhi", "national capital territory of delhi", "dl"),
+    "08-Rajasthan": ("rj",),
+    "09-Uttar Pradesh": ("up",),
+    "10-Bihar": ("br",),
+    "11-Sikkim": ("sk",),
+    "12-Arunachal Pradesh": ("ar",),
+    "13-Nagaland": ("nl",),
+    "14-Manipur": ("mn",),
+    "15-Mizoram": ("mz",),
+    "16-Tripura": ("tr",),
+    "17-Meghalaya": ("ml",),
+    "18-Assam": ("as",),
+    "19-West Bengal": ("wb",),
+    "20-Jharkhand": ("jh",),
+    "21-Odisha": ("orissa", "or", "od"),
+    "22-Chhattisgarh": ("chhatisgarh", "chattishgarh", "cg", "ct"),
+    "23-Madhya Pradesh": ("mp",),
+    "24-Gujarat": ("gujrat", "gj"),
+    # Dadra and Nagar Haveli (old code 26) and Daman and Diu (old code 25) merged in January 2020
+    "26-Dadra and Nagar Haveli and Daman and Diu": (
+        "dadra and nagar haveli", "dadra nagar haveli", "daman and diu", "daman diu", "daman", "diu",
+        "silvassa", "the dadra and nagar haveli and daman and diu", "dnh", "dd", "dn", "dh",
+        "dnhdd", "dnh and dd", "25"),
+    "27-Maharashtra": ("maharastra", "mh"),
+    "29-Karnataka": ("ka",),
+    "30-Goa": ("ga",),
+    "31-Lakshadweep Islands": ("lakshadeep", "ld"),
+    "32-Kerala": ("keralam", "kl"),  # Keralam: the official name the state adopted, now in marketplace exports
+    "33-Tamil Nadu": ("tamilnadu", "tn"),
+    "34-Puducherry": ("py",),
+    "35-Andaman and Nicobar Islands": ("andaman and nicobar", "andaman nicobar", "andaman", "an"),
+    "36-Telangana": ("telengana", "tg", "ts"),
+    "37-Andhra Pradesh": ("andhra pradesh (new)", "ap"),
+    "38-Ladakh": ("la",),
+}
+for _pos, _names in _STATE_ALIASES.items():
+    for _name in _names:
+        state_code_dict.setdefault(_name, _pos)
+for _pos in set(state_code_dict.values()):
+    _code, _label = _pos.split("-", 1)
+    state_code_dict.setdefault(_code, _pos)                     # "32"
+    state_code_dict.setdefault(normalize_state_key(_pos), _pos)  # "32-kerala": a POS label passed back in
+    state_code_dict.setdefault(normalize_state_key(_label), _pos)
+    state_code_dict.setdefault("in-" + _code, _pos)
+
+
 # Reverse lookup: GSTIN state code prefix ("27") → full POS label ("27-Maharashtra")
 _gstin_code_to_pos = {v.split("-", 1)[0]: v for v in state_code_dict.values()}
+_gstin_code_to_pos["25"] = "26-Dadra and Nagar Haveli and Daman and Diu"  # pre-2020 Daman and Diu GSTINs
 
 
 _ITEM_MAP_PATTERNS = (
@@ -1607,6 +1666,13 @@ class EcommerceBillImport(Document):
 								)
 								status = None
 
+				# A buyer registered just now from its GSTIN (status Active) gets its place of supply
+				# from that GSTIN's state, not from the CSV's state name (which may be one we cannot
+				# read). The IGST/CGST split below is judged against the same state, so the two always
+				# agree ("Cannot charge IGST for intra-state supplies" otherwise).
+				gstin_pos = (_gstin_code_to_pos.get(str(items_data[0][1].get("customer_bill_to_gstid") or "").strip()[:2])
+					if status == "Active" else None)
+
 				# Amazon reuses invoice numbers across fiscal years; FY-qualify the
 				# name so re-imports of next-FY data with the same invoice_no don't
 				# silently match a prior-year SI.
@@ -1709,6 +1775,8 @@ class EcommerceBillImport(Document):
 											error_names.append(invoice_no)
 											raise Exception(f"State name Is Wrong Please Check: {state}")
 										si.place_of_supply=state_code_dict.get(normalize_state_key(state))
+								elif gstin_pos:
+									si.place_of_supply = gstin_pos
 
 								qty = flt(child_row.quantity)
 								rate = (flt(child_row.tax_exclusive_gross) / qty) if qty else 0
@@ -1718,7 +1786,7 @@ class EcommerceBillImport(Document):
 								# state) and only falls back to ship_to_state when missing —
 								# reclassifier must compare seller GSTIN against the SAME
 								# state the SI's POS was set from.
-								_pos_state = child_row.bill_to_state or child_row.ship_to_state
+								_pos_state = gstin_pos or child_row.bill_to_state or child_row.ship_to_state
 								(_c_r, _s_r, _u_r, _i_r,
 								 _c_t, _s_t, _u_t, _i_t) = reclassify_gst_by_seller_state(
 									child_row.seller_gstin, _pos_state,
@@ -1891,6 +1959,8 @@ class EcommerceBillImport(Document):
 												error_names.append(invoice_no)
 												raise Exception(f"State name Is Wrong Please Check: {state}")
 											si_return.place_of_supply=state_code_dict.get(normalize_state_key(state))
+									elif gstin_pos:
+										si_return.place_of_supply = gstin_pos
 
 									if not si_return.location:
 										si_return.location = location
@@ -1939,7 +2009,7 @@ class EcommerceBillImport(Document):
 
 									# B2B refund POS uses bill_to_state ?? ship_to_state — same
 									# rule as the shipment leg above.
-									_pos_state = child_row.bill_to_state or child_row.ship_to_state
+									_pos_state = gstin_pos or child_row.bill_to_state or child_row.ship_to_state
 									(cgst_rate, sgst_rate, utgst_rate, igst_rate,
 									 cgst_amt, sgst_amt, utgst_amt, igst_amt) = reclassify_gst_by_seller_state(
 										child_row.seller_gstin, _pos_state,

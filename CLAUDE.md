@@ -101,3 +101,14 @@ After significant code changes, run graphify to update the knowledge graph. Read
 ```bash
 cd /home/ubuntu/frappe-bench-new && bench --site erpnextkgopl.local run-tests --app ecom_import_tool
 ```
+
+## State names (updated 2026-11-14)
+
+- Every platform resolves states through `state_code_dict` + `normalize_state_key()` in
+  `ecommerce_bill_import.py`. Add new names to `_STATE_ALIASES` there, never per handler.
+- Covered: Keralam (Kerala's new official name), the pre-2020 UTs Dadra and Nagar Haveli / Daman and Diu
+  (both → 26), old names (Orissa, Uttaranchal, Pondicherry), spellings, 2-letter and ISO codes (KL, IN-KL),
+  GST codes ("32") and POS labels ("32-Kerala"). `&` reads as "and"; trailing dots/commas are ignored.
+- Amazon B2B: for a buyer registered from its GSTIN (status Active), place of supply and the IGST/CGST
+  reclassification both use the GSTIN's state (`gstin_pos`), so "Cannot charge IGST for intra-state
+  supplies" cannot come from a CSV state name that differs from the GSTIN.
