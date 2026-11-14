@@ -109,6 +109,11 @@ cd /home/ubuntu/frappe-bench-new && bench --site erpnextkgopl.local run-tests --
 - Covered: Keralam (Kerala's new official name), the pre-2020 UTs Dadra and Nagar Haveli / Daman and Diu
   (both → 26), old names (Orissa, Uttaranchal, Pondicherry), spellings, 2-letter and ISO codes (KL, IN-KL),
   GST codes ("32") and POS labels ("32-Kerala"). `&` reads as "and"; trailing dots/commas are ignored.
-- Amazon B2B: for a buyer registered from its GSTIN (status Active), place of supply and the IGST/CGST
-  reclassification both use the GSTIN's state (`gstin_pos`), so "Cannot charge IGST for intra-state
-  supplies" cannot come from a CSV state name that differs from the GSTIN.
+
+## Flipkart — IGST on same-state sales (added 2026-11-14)
+
+- Flipkart's report sometimes charges IGST on a sale or return whose seller GSTIN state equals the place
+  of supply (e.g. Haryana → Haryana); India Compliance refuses it ("Cannot charge IGST for intra-state
+  supplies"). `split_intra_state_igst()` splits that IGST equally into CGST + SGST (same total tax).
+  Only when the states match; every other row keeps Flipkart's taxes exactly. Agreed with the owner
+  2026-11-14 (option a); the invoice Flipkart issued to the buyer still shows IGST.

@@ -561,6 +561,31 @@ def reclassify_gst_by_seller_state(seller_gstin, ship_to_state,
 	return cgst_rate, sgst_rate, utgst_rate, igst_rate, cgst_tax, sgst_tax, utgst_tax, igst_tax
 
 
+def split_intra_state_igst(seller_gstin, place_of_supply, cgst_rate, sgst_rate, igst_rate,
+                           cgst_amt, sgst_amt, igst_amt):
+	"""Flipkart sometimes charges IGST on a sale whose seller and buyer are in the same state; India
+	Compliance then refuses the invoice ("Cannot charge IGST for intra-state supplies"). When the
+	seller GSTIN's state equals the place of supply, the IGST is split equally into CGST + SGST: the
+	same total tax, in the form an intra-state supply needs. Different-state rows are left exactly as
+	Flipkart reported them.
+
+	Returns (cgst_rate, sgst_rate, igst_rate, cgst_amt, sgst_amt, igst_amt).
+	"""
+	from frappe.utils import flt
+
+	cgst_rate, sgst_rate, igst_rate = flt(cgst_rate), flt(sgst_rate), flt(igst_rate)
+	cgst_amt, sgst_amt, igst_amt = flt(cgst_amt), flt(sgst_amt), flt(igst_amt)
+	seller_code = str(seller_gstin or "").strip()[:2]
+	pos_code = str(place_of_supply or "").split("-", 1)[0].strip()
+	if seller_code and seller_code == pos_code and (igst_amt or igst_rate):
+		cgst_rate += igst_rate / 2.0
+		sgst_rate += igst_rate / 2.0
+		cgst_amt += igst_amt / 2.0
+		sgst_amt += igst_amt / 2.0
+		igst_rate = igst_amt = 0.0
+	return cgst_rate, sgst_rate, igst_rate, cgst_amt, sgst_amt, igst_amt
+
+
 def _fiscal_year_end(posting_date):
 	"""Return the Fiscal Year *end* date for posting_date using ERPNext's
 	Fiscal Year doctype, or None if it cannot be resolved.
@@ -1666,13 +1691,6 @@ class EcommerceBillImport(Document):
 								)
 								status = None
 
-				# A buyer registered just now from its GSTIN (status Active) gets its place of supply
-				# from that GSTIN's state, not from the CSV's state name (which may be one we cannot
-				# read). The IGST/CGST split below is judged against the same state, so the two always
-				# agree ("Cannot charge IGST for intra-state supplies" otherwise).
-				gstin_pos = (_gstin_code_to_pos.get(str(items_data[0][1].get("customer_bill_to_gstid") or "").strip()[:2])
-					if status == "Active" else None)
-
 				# Amazon reuses invoice numbers across fiscal years; FY-qualify the
 				# name so re-imports of next-FY data with the same invoice_no don't
 				# silently match a prior-year SI.
@@ -1775,8 +1793,6 @@ class EcommerceBillImport(Document):
 											error_names.append(invoice_no)
 											raise Exception(f"State name Is Wrong Please Check: {state}")
 										si.place_of_supply=state_code_dict.get(normalize_state_key(state))
-								elif gstin_pos:
-									si.place_of_supply = gstin_pos
 
 								qty = flt(child_row.quantity)
 								rate = (flt(child_row.tax_exclusive_gross) / qty) if qty else 0
@@ -1786,7 +1802,7 @@ class EcommerceBillImport(Document):
 								# state) and only falls back to ship_to_state when missing —
 								# reclassifier must compare seller GSTIN against the SAME
 								# state the SI's POS was set from.
-								_pos_state = gstin_pos or child_row.bill_to_state or child_row.ship_to_state
+								_pos_state = child_row.bill_to_state or child_row.ship_to_state
 								(_c_r, _s_r, _u_r, _i_r,
 								 _c_t, _s_t, _u_t, _i_t) = reclassify_gst_by_seller_state(
 									child_row.seller_gstin, _pos_state,
@@ -1959,8 +1975,6 @@ class EcommerceBillImport(Document):
 												error_names.append(invoice_no)
 												raise Exception(f"State name Is Wrong Please Check: {state}")
 											si_return.place_of_supply=state_code_dict.get(normalize_state_key(state))
-									elif gstin_pos:
-										si_return.place_of_supply = gstin_pos
 
 									if not si_return.location:
 										si_return.location = location
@@ -2009,7 +2023,7 @@ class EcommerceBillImport(Document):
 
 									# B2B refund POS uses bill_to_state ?? ship_to_state — same
 									# rule as the shipment leg above.
-									_pos_state = gstin_pos or child_row.bill_to_state or child_row.ship_to_state
+									_pos_state = child_row.bill_to_state or child_row.ship_to_state
 									(cgst_rate, sgst_rate, utgst_rate, igst_rate,
 									 cgst_amt, sgst_amt, utgst_amt, igst_amt) = reclassify_gst_by_seller_state(
 										child_row.seller_gstin, _pos_state,
@@ -3507,6 +3521,13 @@ class EcommerceBillImport(Document):
 
 						rate = (taxable / qty) if qty else 0
 
+						# Same-state sale charged IGST by Flipkart: split into CGST + SGST
+						(cgst_rate, sgst_rate, igst_rate,
+						 cgst_amt, sgst_amt, igst_amt) = split_intra_state_igst(
+							row.seller_gstin, si.place_of_supply,
+							row.cgst_rate, row.sgst_rate, row.igst_rate, cgst_amt, sgst_amt, igst_amt,
+						)
+
 						_amazon_append_si_line(
 							si,
 							item_code=item_code,
@@ -3518,9 +3539,9 @@ class EcommerceBillImport(Document):
 							income_account=flipkart.income_account,
 							custom_ecom_item_id=row.order_item_id,
 							taxes=[
-								("CGST", flt(row.cgst_rate), cgst_amt, _settings_account("output_cgst")),
-								("SGST", flt(row.sgst_rate), sgst_amt, _settings_account("output_sgst")),
-								("IGST", flt(row.igst_rate), igst_amt, _settings_account("output_igst")),
+								("CGST", cgst_rate, cgst_amt, _settings_account("output_cgst")),
+								("SGST", sgst_rate, sgst_amt, _settings_account("output_sgst")),
+								("IGST", igst_rate, igst_amt, _settings_account("output_igst")),
 							],
 						)
 						existing_item_ids.add(row.order_item_id)
@@ -3777,6 +3798,13 @@ class EcommerceBillImport(Document):
 
 						rate = taxable / qty_abs if qty_abs else 0
 
+						# Same-state return charged IGST by Flipkart: split into CGST + SGST
+						(cgst_rate, sgst_rate, igst_rate,
+						 cgst_amt, sgst_amt, igst_amt) = split_intra_state_igst(
+							row.seller_gstin, si.place_of_supply,
+							row.cgst_rate, row.sgst_rate, row.igst_rate, cgst_amt, sgst_amt, igst_amt,
+						)
+
 						_amazon_append_si_line(
 							si,
 							item_code=item_code,
@@ -3788,9 +3816,9 @@ class EcommerceBillImport(Document):
 							income_account=flipkart.income_account,
 							custom_ecom_item_id=row.order_item_id,
 							taxes=[
-								("CGST", flt(row.cgst_rate), cgst_amt, _settings_account("output_cgst")),
-								("SGST", flt(row.sgst_rate), sgst_amt, _settings_account("output_sgst")),
-								("IGST", flt(row.igst_rate), igst_amt, _settings_account("output_igst")),
+								("CGST", cgst_rate, cgst_amt, _settings_account("output_cgst")),
+								("SGST", sgst_rate, sgst_amt, _settings_account("output_sgst")),
+								("IGST", igst_rate, igst_amt, _settings_account("output_igst")),
 							],
 						)
 						existing_item_ids.add(row.order_item_id)
