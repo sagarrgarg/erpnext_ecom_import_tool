@@ -117,3 +117,24 @@ cd /home/ubuntu/frappe-bench-new && bench --site erpnextkgopl.local run-tests --
   supplies"). `split_intra_state_igst()` splits that IGST equally into CGST + SGST (same total tax).
   Only when the states match; every other row keeps Flipkart's taxes exactly. Agreed with the owner
   2026-11-14 (option a); the invoice Flipkart issued to the buyer still shows IGST.
+
+## Stock safety (added 2026-11-15) — `utils/stock_guard.py`
+
+Built after KGO's October Flipkart imports left 2,833 `update_stock=1` invoices with no Stock Ledger Entry
+(no COGS / Stock In Hand GL), and an SD-18 batch sharing one timestamp queued 301 deadlocking reposts.
+- **Every import submit goes through `submit_checked(doc)`** (also inside `_amazon_save_and_submit`). It submits
+  under a savepoint; if submit raises, or any stock-item row of an SI/PI (`update_stock=1`) / DN / PR has no
+  active SLE, the doc is rolled back to draft and the import log shows "Submit failed: no stock ledger: …".
+  Never call `doc.submit()` directly in a handler.
+- **One posting time per document**: `stamp_posting(doc, platform_dt)` keeps the platform date and moves the
+  time on by whole seconds until free (Flipkart's 00:00:00 → 00:00:00, 00:00:01, … in file order). Times of
+  already-submitted vouchers that day count as taken; the date never changes. Active only inside a run
+  (`stock_guard.start_run` / `end_run` in `invoice_creation`).
+- **Stock before sales**: `EcommerceBillImport._batch_stock_needs()` sums what the file's not-yet-submitted
+  sales take per (item, warehouse); `stock_shortfall` compares it with stock at the batch's earliest posting
+  time (no reliance on allow_negative_stock). The preview shows "AL112 @ Ecommerce Out: need 7,536, have 1,749";
+  during the run, sales from a short pair are not submitted ("Stock shortfall: …"). CRED is not covered yet
+  (its handler reads the files itself).
+- The reconcile view flags submitted SIs whose stock rows lack SLE ("Stock Ledger" column).
+- Tests: `doctype/ecommerce_bill_import/test_stock_guard.py` (run via
+  `bench --site frappe.localhost execute excom.excom.tests.run.run --kwargs '{"module": "ecom_import_tool.ecom_import_tool.doctype.ecommerce_bill_import.test_stock_guard"}'`).

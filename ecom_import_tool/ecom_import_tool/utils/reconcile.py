@@ -289,8 +289,26 @@ def reconcile_ecommerce_bill_import(doc):
 			and abs(row["var_total"]) <= TOLERANCE
 		)
 		out.append(row)
+	_mark_stock_ledger_gaps(out)
 	out.sort(key=lambda r: (r["match"], r["type"], r["ecom_invoice_no"]))
 	return out
+
+
+def _mark_stock_ledger_gaps(rows):
+	"""Flag submitted stock invoices whose stock rows have no Stock Ledger Entry
+	(e.g. imports made before the post-submit check existed). Sets
+	`stock_ledger` to a short description and `match` to False on those rows."""
+	from ecom_import_tool.ecom_import_tool.utils.stock_guard import describe_gap, stock_ledger_gaps
+
+	names = sorted({r["si_name"] for r in rows if r.get("si_status") == "Submitted" and r.get("si_name")})
+	gaps = {}
+	for i in range(0, len(names), 500):
+		gaps.update(stock_ledger_gaps("Sales Invoice", names[i:i + 500]))
+	for r in rows:
+		gap = gaps.get(r.get("si_name")) if r.get("si_status") == "Submitted" else None
+		r["stock_ledger"] = describe_gap(gap["missing"], gap["expected"]) if gap else ""
+		if gap:
+			r["match"] = False
 
 
 _STATUS_LABEL = {0: "Draft", 1: "Submitted", 2: "Cancelled"}

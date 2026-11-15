@@ -25,6 +25,8 @@ from ecom_import_tool.ecom_import_tool.utils.amazon_si import (
 	_amazon_append_si_line,
 	_amazon_save_and_submit,
 )
+from ecom_import_tool.ecom_import_tool.utils import stock_guard
+from ecom_import_tool.ecom_import_tool.utils.stock_guard import stamp_posting, submit_checked
 from ecom_import_tool.ecom_import_tool.doctype.india_ecommerce_reco_settings.india_ecommerce_reco_settings import (
 	get_account as _settings_account,
 )
@@ -237,6 +239,13 @@ def safe_refund_qty_rate(quantity, tax_exclusive_gross):
 		abs_amount = 0
 
 	return 0, abs_amount, True
+
+
+def _submit_failed(error):
+	"""Import-log text for a failed submit, without doubling the prefix that
+	stock_guard's errors already carry ("Submit failed: no stock ledger: ...")."""
+	text = str(error)
+	return text if text.startswith("Submit failed") else f"Submit failed: {text}"
 
 
 def resolve_ecommerce_gstin_from_mapping(ecommerce_mapping, seller_gstin):
@@ -713,6 +722,33 @@ def find_existing_amazon_doc(doctype, name, posting_date, **filters):
 	return None
 
 
+def _submitted_amazon_names(doctypes, invoices):
+	"""Of {(invoice_no, invoice_datetime)}, the invoice numbers already submitted
+	as one of ``doctypes``. Bulk form of find_existing_amazon_doc: the FY-qualified
+	name, or the legacy bare name when it is dated in the same fiscal year."""
+	qualified = {}
+	for invoice_no, dt in invoices:
+		day = dt.date() if dt else None
+		qualified[invoice_no] = (qualify_with_fy(invoice_no, day), _fiscal_year_end(day))
+	names = list({q for q, _fy in qualified.values()} | set(qualified))
+	found = {}
+	for doctype in doctypes:
+		for i in range(0, len(names), 500):
+			for row in frappe.get_all(
+				doctype,
+				filters={"name": ["in", names[i:i + 500]], "docstatus": 1},
+				fields=["name", "posting_date"],
+			):
+				found[row.name] = row.posting_date
+	done = set()
+	for invoice_no, (q, fy_end) in qualified.items():
+		if q in found:
+			done.add(invoice_no)
+		elif q != invoice_no and invoice_no in found and fy_end and _fiscal_year_end(found[invoice_no]) == fy_end:
+			done.add(invoice_no)
+	return done
+
+
 def find_existing_amazon_si(name, posting_date, **filters):
 	"""Sales Invoice convenience wrapper around find_existing_amazon_doc."""
 	return find_existing_amazon_doc("Sales Invoice", name, posting_date, **filters)
@@ -852,7 +888,28 @@ class EcommerceBillImport(Document):
 			except Exception:
 				pass
 
+		stock_html = self._stock_check_preview()
+		if stock_html:
+			previews.insert(0, stock_html)
+
 		return "<br>".join(previews) if previews else ""
+
+	def _stock_check_preview(self):
+		"""Stock-before-sales block for the preview: per (item, warehouse), the
+		file's sales against the stock at the batch's first sale."""
+		if self.ecommerce_mapping not in ("Flipkart", "Jiomart", "Amazon"):
+			return ""
+		try:
+			self._parse_attached_file()
+			rows, start = self.stock_check()
+		except Exception as e:
+			return (
+				"<div class='alert alert-warning' style='font-size:12px;'>Stock check could not run: "
+				f"{frappe.utils.escape_html(str(e))}</div>"
+			)
+		if not start:
+			return ""
+		return stock_guard.shortfall_html(rows, start)
 
 	@frappe.whitelist()
 	def create_invoice(self):
@@ -880,6 +937,13 @@ class EcommerceBillImport(Document):
 		from ecom_import_tool.ecom_import_tool.utils.reconcile import (
 			reconcile_ecommerce_bill_import,
 		)
+		# The file's rows aren't stored on the doc; read them when the tables are empty.
+		tables = ("mtr_b2b", "mtr_b2c", "flipkart_items", "jio_mart_items", "cred", "stock_transfer")
+		if not any(self.get(t) for t in tables):
+			try:
+				self._parse_attached_file()
+			except Exception:
+				frappe.log_error(title="Ecom reconcile: could not read file", message=frappe.get_traceback())
 		return reconcile_ecommerce_bill_import(self)
 
 
@@ -894,6 +958,16 @@ class EcommerceBillImport(Document):
 		_item_details_module.insert_item_price = lambda *args, **kwargs: None
 		try:
 			self._parse_attached_file()
+
+			# Stock before sales: sales that would take an (item, warehouse) below
+			# the stock it has at the batch's first sale are not submitted (logged
+			# as "Stock shortfall: ..."). Also starts this run's posting clock.
+			short_rows = []
+			try:
+				short_rows, _at = self.stock_check()
+			except Exception:
+				frappe.log_error(title="Ecom import: stock check failed", message=frappe.get_traceback())
+			stock_guard.start_run(short_rows)
 
 			if self.ecommerce_mapping=="Amazon":
 				if self.amazon_type=="MTR B2B":
@@ -915,6 +989,7 @@ class EcommerceBillImport(Document):
 				self.create_jio_mart()
 				frappe.msgprint("Jiomart Data Import Finished")
 		finally:
+			stock_guard.end_run()
 			_item_details_module.insert_item_price = _original_insert_item_price
 
 	def _parse_attached_file(self):
@@ -931,6 +1006,104 @@ class EcommerceBillImport(Document):
 			self.append_flipkart()
 		elif self.ecommerce_mapping == "Jiomart":
 			self.append_jio_mart()
+
+	def stock_check(self):
+		"""(shortfall rows, batch start) for the parsed file's sales.
+		Call after _parse_attached_file()."""
+		needs, start = self._batch_stock_needs()
+		return stock_guard.stock_shortfall(needs, start), start
+
+	def _batch_stock_needs(self):
+		"""What this file's sales take out of each (item, warehouse), and the
+		earliest posting datetime among them.
+
+		Only sales still to be created count: invoices already submitted are
+		skipped, as the handlers skip them. Returns ({(item, wh): qty}, datetime).
+		CRED reads its files inside its handler, so it has no batch check yet.
+		"""
+		needs, start = {}, None
+		mapping = frappe.get_doc("Ecommerce Mapping", self.ecommerce_mapping) if self.ecommerce_mapping else None
+		if not mapping:
+			return needs, start
+		item_map = {r.ecom_item_id: r.erp_item for r in (mapping.ecom_item_table or []) if r.ecom_item_id}
+		wh_map = {
+			normalize_warehouse_id(r.ecom_warehouse_id): r.erp_warehouse
+			for r in (mapping.ecommerce_warehouse_mapping or [])
+			if r.ecom_warehouse_id
+		}
+
+		def warehouse_for(warehouse_id):
+			wid = normalize_warehouse_id(warehouse_id)
+			return wh_map.get(wid) if wid else mapping.default_company_warehouse
+
+		def submitted(names):
+			names = [n for n in names if n]
+			if not names:
+				return set()
+			found = set()
+			for i in range(0, len(names), 500):
+				found.update(frappe.get_all(
+					"Sales Invoice",
+					filters={"name": ["in", names[i:i + 500]], "docstatus": 1},
+					pluck="name",
+				))
+			return found
+
+		if self.ecommerce_mapping == "Flipkart":
+			col = (mapping.ecom_sku_column_header or "").strip() or "fsn"
+			rows = [r for r in (self.flipkart_items or []) if r.event_sub_type == "Sale" and r.buyer_invoice_id]
+			done = submitted({r.buyer_invoice_id for r in rows})
+			for r in rows:
+				if r.buyer_invoice_id in done:
+					continue
+				sku = r.get(col) or next((r.get(f) for f in ("fsn", "sku", "order_item_id") if r.get(f)), None)
+				stock_guard.add_need(needs, item_map.get(sku), warehouse_for(r.warehouse_id), r.item_quantity)
+				start = stock_guard.earliest(start, parse_export_date(r.buyer_invoice_date))
+
+		elif self.ecommerce_mapping == "Jiomart":
+			rows = [r for r in (self.jio_mart_items or []) if r.type == "shipment" and r.original_invoice_id]
+			done = submitted({r.original_invoice_id for r in rows})
+			for r in rows:
+				if r.original_invoice_id in done:
+					continue
+				item = item_map.get(r.get(mapping.ecom_sku_column_header))
+				stock_guard.add_need(needs, item, mapping.default_company_warehouse, r.item_quantity)
+				start = stock_guard.earliest(start, parse_export_date(r.buyer_invoice_date))
+
+		elif self.ecommerce_mapping == "Amazon" and self.amazon_type in ("MTR B2B", "MTR B2C"):
+			table = self.mtr_b2b if self.amazon_type == "MTR B2B" else self.mtr_b2c
+			rows = []
+			for r in (table or []):
+				invoice_no = (r.invoice_number or "").strip()
+				if invoice_no and r.get("transaction_type") not in ("Refund", "Cancel"):
+					rows.append((invoice_no, parse_export_datetime(r.invoice_date), r))
+			done = _submitted_amazon_names(("Sales Invoice",), {(n, dt) for n, dt, _r in rows})
+			for invoice_no, dt, r in rows:
+				if invoice_no in done:
+					continue
+				item = item_map.get(r.get(mapping.ecom_sku_column_header))
+				stock_guard.add_need(needs, item, warehouse_for(r.warehouse_id), r.quantity)
+				start = stock_guard.earliest(start, dt)
+
+		elif self.ecommerce_mapping == "Amazon" and self.amazon_type == "Stock Transfer":
+			rows = []
+			for r in (self.stock_transfer or []):
+				invoice_no = (r.invoice_number or "").strip()
+				txn = (r.transaction_type or "").strip()
+				if invoice_no and not (txn == "Cancel" or txn.endswith("-Cancel")):
+					rows.append((invoice_no, parse_export_datetime(r.invoice_date), r))
+			done = _submitted_amazon_names(
+				("Sales Invoice", "Delivery Note"), {(n, dt) for n, dt, _r in rows}
+			)
+			for invoice_no, dt, r in rows:
+				if invoice_no in done:
+					continue
+				sku = r.get(mapping.ecom_sku_column_header) or r.get("sku") or r.get("asin")
+				source = wh_map.get(normalize_warehouse_id(r.ship_from_fc))
+				stock_guard.add_need(needs, item_map.get(sku), source, r.quantity)
+				start = stock_guard.earliest(start, dt)
+
+		return needs, start
 
 	def _update_import_status(self):
 		"""Persist only status and error fields to DB without saving child tables.
@@ -1855,7 +2028,7 @@ class EcommerceBillImport(Document):
 				if refund_items and existing_si_draft and not existing_si and not warehouse_mapping_missing:
 					draft_si = frappe.get_doc("Sales Invoice", existing_si_draft)
 					if draft_si.name not in error_log:
-						draft_si.submit()
+						submit_checked(draft_si)
 						frappe.db.commit()
 						existing_si = draft_si.name
 
@@ -2380,7 +2553,7 @@ class EcommerceBillImport(Document):
 					try:
 						draft_si = frappe.get_doc("Sales Invoice", existing_si_draft)
 						if invoice_no not in error_names:
-							draft_si.submit()
+							submit_checked(draft_si)
 							frappe.db.commit()
 							existing_si = draft_si.name
 					except Exception as e:
@@ -2818,13 +2991,13 @@ class EcommerceBillImport(Document):
 				if existing_name:
 					existing_doc = frappe.get_doc(doctype, existing_name)
 					if existing_doc.docstatus == 0:
-						existing_doc.submit()
+						submit_checked(existing_doc)
 					else:
 						existing_count += len(group_rows)
 				if existing_name_purchase:
 					existing_doc_pur = frappe.get_doc(doctype_m, existing_name_purchase)
 					if existing_doc_pur.docstatus == 0:
-						existing_doc_pur.submit()
+						submit_checked(existing_doc_pur)
 					# Parity check vs the source SI/DN so we don't silently skip a
 					# stale PI/PR that no longer matches the current row. Compare
 					# net_total + total_taxes_and_charges with a 1-paise tolerance.
@@ -2877,8 +3050,7 @@ class EcommerceBillImport(Document):
 					invoice_dt = parse_export_datetime(group_rows[0][1].get("invoice_date"))
 					if not invoice_dt:
 						raise Exception(f"Invalid Invoice Date: {group_rows[0][1].get('invoice_date')}")
-					doc.posting_date = invoice_dt.date()
-					doc.posting_time = invoice_dt.time()
+					stamp_posting(doc, invoice_dt)
 					doc.custom_ecommerce_operator = self.ecommerce_mapping
 					doc.custom_ecommerce_type = self.amazon_type
 					doc.taxes = []
@@ -2986,8 +3158,7 @@ class EcommerceBillImport(Document):
 					invoice_dt = parse_export_datetime(group_rows[0][1].get("invoice_date"))
 					if not invoice_dt:
 						raise Exception(f"Invalid Invoice Date: {group_rows[0][1].get('invoice_date')}")
-					pi_doc.posting_date = invoice_dt.date()
-					pi_doc.posting_time = invoice_dt.time()
+					stamp_posting(pi_doc, invoice_dt)
 					pi_doc.customer = customer
 					pi_doc.custom_ecommerce_operator = self.ecommerce_mapping
 					pi_doc.custom_ecommerce_type = self.amazon_type
@@ -3572,7 +3743,7 @@ class EcommerceBillImport(Document):
 							"idx": "",
 							"invoice_id": invoice_key,
 							"event": "Sale",
-							"message": f"Submit failed: {str(submit_error)}",
+							"message": _submit_failed(submit_error),
 						})
 				elif not group_errors and not si.items:
 					errors.append({
@@ -3849,7 +4020,7 @@ class EcommerceBillImport(Document):
 							"idx": "",
 							"invoice_id": invoice_key,
 							"event": "Return",
-							"message": f"Submit failed: {str(submit_error)}",
+							"message": _submit_failed(submit_error),
 						})
 				elif not group_errors and not si.items:
 					errors.append({
@@ -4682,8 +4853,7 @@ class EcommerceBillImport(Document):
 					si = frappe.new_doc("Sales Invoice")
 					si.flags.ignore_pricing_rule = 1
 					si.customer = customer
-					si.set_posting_time = 1
-					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
+					stamp_posting(si, parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date))
 					si.custom_ecommerce_operator = self.ecommerce_mapping
 					si.custom_ecommerce_type = self.amazon_type
 					if first.customers_billing_state:
@@ -4824,14 +4994,14 @@ class EcommerceBillImport(Document):
 		# Submit Sales Invoices
 		for sii in si_invoice:
 			try:
-				frappe.get_doc("Sales Invoice", sii).submit()
+				submit_checked(frappe.get_doc("Sales Invoice", sii))
 				frappe.db.commit()
 			except Exception as e:
 				errors.append({
 					"idx": "",
 					"invoice_id": sii,
 					"event": "Sale",
-					"message": f"Submit failed: {str(e)}"
+					"message": _submit_failed(e)
 				})
 
 		# ---------- RETURNS ----------
@@ -4908,8 +5078,7 @@ class EcommerceBillImport(Document):
 					si = frappe.new_doc("Sales Invoice")
 					si.flags.ignore_pricing_rule = 1
 					si.customer = customer
-					si.set_posting_time = 1
-					si.posting_date = parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date)
+					stamp_posting(si, parse_export_date(first.buyer_invoice_date) or getdate(first.buyer_invoice_date))
 					si.custom_ecommerce_operator = self.ecommerce_mapping
 					si.custom_ecommerce_type = self.amazon_type
 					si.taxes_and_charges = ""
@@ -5049,14 +5218,14 @@ class EcommerceBillImport(Document):
 		# Submit Return Invoices
 		for sii in return_invoice:
 			try:
-				frappe.get_doc("Sales Invoice", sii).submit()
+				submit_checked(frappe.get_doc("Sales Invoice", sii))
 				frappe.db.commit()
 			except Exception as e:
 				errors.append({
 					"idx": "",
 					"invoice_id": sii,
 					"event": "Return",
-					"message": f"Submit failed: {str(e)}"
+					"message": _submit_failed(e)
 				})
 
 		# 🔹 Final progress update

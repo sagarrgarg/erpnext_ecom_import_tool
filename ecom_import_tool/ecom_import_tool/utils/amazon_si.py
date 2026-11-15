@@ -23,6 +23,8 @@ import json
 import frappe
 from frappe.utils import flt, getdate, today
 
+from ecom_import_tool.ecom_import_tool.utils.stock_guard import stamp_posting, submit_checked
+
 
 def normalize_tax_rate(rate):
 	"""Normalize tax rate to percentage ERPNext expects (5 for 5%).
@@ -102,6 +104,8 @@ def _amazon_init_si_header(*, customer, posting_dt, ecom_name, is_return,
 			si.return_against = return_against
 		else:
 			si.return_against = None
+		# A reused draft gets this run's posting slot too (see stock_guard.PostingClock).
+		stamp_posting(si, posting_dt)
 		# Clear stale items / taxes / payments so the caller re-populates with
 		# the current run's sign + classification. Old drafts can carry items
 		# from a prior import where qty was positive (pre-is_return fix) or
@@ -117,9 +121,8 @@ def _amazon_init_si_header(*, customer, posting_dt, ecom_name, is_return,
 	si = frappe.new_doc("Sales Invoice")
 	si.flags.ignore_pricing_rule = 1
 	si.customer = customer
-	si.set_posting_time = 1
-	si.posting_date = posting_dt.date()
-	si.posting_time = posting_dt.time()
+	# Platform date, own time: +1 second per document within a run.
+	stamp_posting(si, posting_dt)
 	si.custom_ecommerce_operator = ecommerce_operator
 	si.custom_ecommerce_type = amazon_type
 	si.taxes_and_charges = ""
@@ -259,5 +262,6 @@ def _amazon_save_and_submit(si, *, mode_of_payment, due_date=None):
 			si.payments[0].amount = target
 			si.save(ignore_permissions=True)
 
-	si.submit()
+	# Rolls back to draft if submit fails or a stock row has no Stock Ledger Entry.
+	submit_checked(si)
 	return si

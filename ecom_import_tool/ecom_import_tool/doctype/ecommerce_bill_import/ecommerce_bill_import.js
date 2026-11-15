@@ -411,13 +411,15 @@ function _ecom_show_reconcile_dialog(frm, rows) {
 	const total = rows.length;
 	const mismatches = rows.filter(r => !r.match).length;
 	const missing = rows.filter(r => r.si_status === "Missing").length;
+	const noStock = rows.filter(r => r.stock_ledger).length;
 	const fmt = (n) => (n === null || n === undefined ? "" : frappe.format(n, { fieldtype: "Float", precision: 2 }));
 
 	let table = `
 		<div style="margin-bottom:8px;">
 			<strong>${total}</strong> invoices &middot;
 			<span style="color:${mismatches ? '#c0392b' : '#27ae60'};"><strong>${mismatches}</strong> mismatched</span> &middot;
-			<span style="color:${missing ? '#c0392b' : '#6c757d'};"><strong>${missing}</strong> missing SI</span>
+			<span style="color:${missing ? '#c0392b' : '#6c757d'};"><strong>${missing}</strong> missing SI</span> &middot;
+			<span style="color:${noStock ? '#c0392b' : '#6c757d'};"><strong>${noStock}</strong> without stock ledger</span>
 		</div>
 		<div style="margin-bottom:8px;">
 			<button class="btn btn-xs btn-default" id="ecom-recon-csv">${__("Download CSV")}</button>
@@ -439,6 +441,7 @@ function _ecom_show_reconcile_dialog(frm, rows) {
 					<th class="text-right">${__("CSV Total")}</th>
 					<th class="text-right">${__("SI Total")}</th>
 					<th class="text-right">${__("Δ Total")}</th>
+					<th>${__("Stock Ledger")}</th>
 				</tr>
 			</thead><tbody>
 	`;
@@ -461,6 +464,7 @@ function _ecom_show_reconcile_dialog(frm, rows) {
 			<td class="text-right">${fmt(r.csv_total)}</td>
 			<td class="text-right">${fmt(r.si_total)}</td>
 			<td class="text-right" style="${Math.abs(r.var_total) > 0.10 ? 'color:#c0392b;font-weight:bold;' : ''}">${fmt(r.var_total)}</td>
+			<td style="${r.stock_ledger ? 'color:#c0392b;font-weight:bold;' : ''}">${frappe.utils.escape_html(r.stock_ledger || "")}</td>
 		</tr>`;
 	});
 	table += `</tbody></table></div>`;
@@ -475,7 +479,7 @@ function _ecom_show_reconcile_dialog(frm, rows) {
 	d.fields_dict.body.$wrapper.html(table);
 	d.show();
 	d.$wrapper.find("#ecom-recon-csv").on("click", () => {
-		const headers = ["type","ecom_invoice_no","si_name","si_status","csv_taxable","si_taxable","var_taxable","csv_tax","si_tax","var_tax","csv_total","si_total","var_total","match"];
+		const headers = ["type","ecom_invoice_no","si_name","si_status","csv_taxable","si_taxable","var_taxable","csv_tax","si_tax","var_tax","csv_total","si_total","var_total","stock_ledger","match"];
 		const lines = [headers.join(",")];
 		rows.forEach(r => {
 			lines.push(headers.map(h => {
